@@ -22,19 +22,34 @@ MODE_STATUS_SET      = "7. Auto Status Set (Open Step)"
 st.set_page_config(page_title="AI Studio Automation Suite", layout="wide")
 st.title("🤖 AI Studio Automation Suite - Multi-User Web Edition")
 
-# Khởi tạo các biến Session State của Streamlit để lưu trạng thái giữa các lần click
+# Khởi tạo các biến lưu trạng thái tiến trình (Session State)
 if "driver" not in st.session_state:
     st.session_state.driver = None
 if "step" not in st.session_state:
-    st.session_state.step = "input_config"  # Các bước: input_config -> wait_otp -> running
+    st.session_state.step = "input_config"
 
-# --- GIAO DIỆN PHÍA TRÊN ---
-project_url = st.text_input("1. Nhập URL Dự án (Project URL):", "https://www.ai-studio.co.kr/po/task/taskList?projectId=")
-uploaded_file = st.file_uploader("2. Tải lên File chứa danh sách Task (.txt):", type=["txt"])
-mode = st.selectbox("3. Lựa chọn chức năng Script muốn chạy:", [
-    MODE_ASSIGN_MASTER, MODE_CHANGE_POINT, MODE_3D_ANNO_REVIEW, 
-    MODE_INSPECTION_AI, MODE_IMPORT_2D, MODE_IMPORT_3D, MODE_STATUS_SET
-])
+# --- GIAO DIỆN CẤU HÌNH ĐẦU VÀO ---
+col_left, col_right = st.columns([2, 1])
+
+with col_left:
+    project_url = st.text_input("1. Nhập URL Dự án (Project URL):", "https://www.ai-studio.co.kr/po/task/taskList?projectId=")
+    uploaded_file = st.file_uploader("2. Tải lên File chứa danh sách Task (.txt):", type=["txt"])
+    mode = st.selectbox("3. Lựa chọn chức năng Script muốn chạy:", [
+        MODE_ASSIGN_MASTER, MODE_CHANGE_POINT, MODE_3D_ANNO_REVIEW, 
+        MODE_INSPECTION_AI, MODE_IMPORT_2D, MODE_IMPORT_3D, MODE_STATUS_SET
+    ])
+
+with col_right:
+    st.info("💡 **Quy trình vận hành hệ thống:**\n1. Nhập link Project và Upload file danh sách Task.\n2. Điền ID/Password cá nhân để nhận mã OTP từ xa.\n3. Nhìn hình ảnh thực tế từ Server Render để điền đúng OTP xác thực.")
+    with st.expander("📄 Xem hướng dẫn file mẫu (.txt)"):
+        if mode == MODE_CHANGE_POINT:
+            st.code("task_name\tanno_point\trv_point\nPCD_Slot_01\t15\t5", language="text")
+        elif mode == MODE_3D_ANNO_REVIEW:
+            st.code("task_name\tworker_id\treviewer_id\tlimit\nPCD_Box_01\tworker_thai\treviewer_an\t50\nPCD_Box_02\t-\treviewer_an\t100", language="text")
+        elif mode == MODE_STATUS_SET:
+            st.code("task_name\tstatus_value\n2D_Retouch_001\tSTEP02", language="text")
+        else:
+            st.code("task_name\tgiá_trị_cột_2\nTask_Name_01\tID_hoặc_Tên_File", language="text")
 
 # --- HÀM BỔ TRỢ SELENIUM CORE ---
 def wait_loading(driver):
@@ -42,6 +57,16 @@ def wait_loading(driver):
         loading = WebDriverWait(driver, 3).until(EC.presence_of_element_located((By.CSS_SELECTOR, ".loading-wrap")))
         WebDriverWait(driver, 60).until(lambda d: "on" not in (loading.get_attribute("class") or ""))
     except Exception: pass
+
+def accept_alert_if_present(driver, timeout=2, label="alert"):
+    try:
+        WebDriverWait(driver, timeout).until(EC.alert_is_present())
+        alert = driver.switch_to.alert
+        text = alert.text
+        alert.accept()
+        time.sleep(0.4)
+        return text
+    except Exception: return None
 
 def robust_click(driver, elem, name="element"):
     for fn in (lambda: elem.click(), lambda: driver.execute_script("arguments[0].click();", elem)):
@@ -53,7 +78,17 @@ def robust_click(driver, elem, name="element"):
         except Exception: time.sleep(0.2)
     raise Exception(f"Failed to click {name}")
 
+def js_set_value(driver, elem, value):
+    driver.execute_script(
+        "arguments[0].focus(); arguments[0].value = '';"
+        "arguments[0].dispatchEvent(new Event('input', {bubbles:true}));"
+        "arguments[0].value = arguments[1];"
+        "arguments[0].dispatchEvent(new Event('input', {bubbles:true}));"
+        "arguments[0].dispatchEvent(new Event('change', {bubbles:true}));", elem, str(value)
+    )
+
 def open_search_form_if_needed(driver):
+    accept_alert_if_present(driver, timeout=0.2, label="before search")
     search_frm = WebDriverWait(driver, 5).until(EC.presence_of_element_located((By.CSS_SELECTOR, "#searchFrm")))
     if "open" not in (search_frm.get_attribute("class") or ""):
         toggle_btn = WebDriverWait(driver, 5).until(EC.element_to_be_clickable((By.CSS_SELECTOR, "button[onclick*='searchFrm']")))
@@ -69,7 +104,57 @@ def input_task_name(driver, task_name):
     search_input.send_keys(task_name)
     time.sleep(0.2)
 
-# --- PARSER GIỮ NGUYÊN TỪ BẢN GỘP THÔNG MINH CŨ ---
+def find_matching_row(driver, task_name):
+    rows = driver.find_elements(By.CSS_SELECTOR, "#task_list > tr")
+    for row in rows:
+        try:
+            txt = " | ".join(td.text.strip() for td in row.find_elements(By.TAG_NAME, "td"))
+            if task_name in txt: return row
+        except Exception: continue
+    return None
+
+def click_task_name_from_row(driver, row, task_name):
+    tds = row.find_elements(By.TAG_NAME, "td")
+    task_name_cell = tds[1]
+    anchors = task_name_cell.find_elements(By.TAG_NAME, "a")
+    if anchors:
+        robust_click(driver, anchors[0], "task name anchor")
+        return
+    spans = task_name_cell.find_elements(By.CSS_SELECTOR, "span.ellipsis.underline")
+    if spans:
+        robust_click(spans[0], "task name span")
+        return
+    robust_click(task_name_cell, "task name cell")
+
+def open_member_tab(driver):
+    member_tab = WebDriverWait(driver, 10).until(EC.element_to_be_clickable((By.XPATH, "//a[normalize-space()='Member'] | //button[normalize-space()='Member']")))
+    robust_click(member_tab, "Member tab")
+
+def assign_member_popup_core(driver, member_id, search_onclick_btn, row_checkbox_selector):
+    search_input = WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.ID, "searchId")))
+    robust_click(search_input, "popup search input")
+    search_input.send_keys(Keys.CONTROL, "a")
+    search_input.send_keys(Keys.DELETE)
+    js_set_value(driver, search_input, member_id)
+    time.sleep(0.3)
+    search_btn = WebDriverWait(driver, 10).until(EC.element_to_be_clickable((By.XPATH, search_onclick_btn)))
+    robust_click(search_btn, "popup search button")
+    time.sleep(1)
+    checkbox = WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.CSS_SELECTOR, row_checkbox_selector)))
+    driver.execute_script("arguments[0].checked = true;", checkbox)
+    driver.execute_script("arguments[0].dispatchEvent(new Event('change', {bubbles:true}));", checkbox)
+    time.sleep(0.3)
+    popup_save_btn = WebDriverWait(driver, 10).until(EC.element_to_be_clickable((By.XPATH, "//button[@onclick='addMemberSearchMember()']")))
+    robust_click(popup_save_btn, "popup save button")
+    time.sleep(0.5)
+
+def click_final_save(driver):
+    final_save_btn = WebDriverWait(driver, 10).until(EC.element_to_be_clickable((By.XPATH, "//button[@onclick='updateAssignCnt()']")))
+    robust_click(final_save_btn, "final save button")
+    time.sleep(0.5)
+    accept_alert_if_present(driver, timeout=5, label="task saved alert")
+
+# --- SMART PARSER HỖ TRỢ ĐA CẤU TRÚC FILE TEXT ---
 def parse_uploaded_file(file_content):
     tasks = []
     lines = file_content.decode("utf-8-sig").splitlines()
@@ -78,9 +163,11 @@ def parse_uploaded_file(file_content):
         if not raw or raw.startswith("#"): continue
         parts = raw.split("\t") if "\t" in raw else (raw.split(",") if "," in raw else raw.split())
         if len(parts) < 2: continue
+        
         task_name, col2 = parts[0], parts[1]
         anno_point, rv_point = "0", "0"
         worker_id, reviewer_id, anno_limit = None, None, None
+        
         if len(parts) == 2: worker_id = parts[1]
         else:
             if parts[1].isdigit() and parts[2].isdigit(): anno_point, rv_point = parts[1], parts[2]
@@ -90,37 +177,200 @@ def parse_uploaded_file(file_content):
                     if parts[2].isdigit(): anno_limit = parts[2]
                     else: reviewer_id = parts[2]
                 if len(parts) >= 4 and parts[3].isdigit(): anno_limit = parts[3]
-        tasks.append({"line_no": line_no, "task_name": task_name, "col2": col2, "anno_point": anno_point, "rv_point": rv_point, "worker_id": worker_id, "reviewer_id": reviewer_id, "anno_limit": anno_limit})
+
+        tasks.append({
+            "line_no": line_no, "task_name": task_name, "col2": col2,
+            "anno_point": anno_point, "rv_point": rv_point,
+            "worker_id": worker_id, "reviewer_id": reviewer_id, "anno_limit": anno_limit
+        })
     return tasks
 
+# --- CORE LOGIC TÁC VỤ (7 CHẾ ĐỘ CHẠY TỪ BẢN GỘP) ---
+def execute_mode_logic(driver, item, run_mode):
+    driver.get(project_url)
+    wait_loading(driver)
+    accept_alert_if_present(driver, timeout=1, label="init URL")
+
+    if run_mode == MODE_IMPORT_2D:
+        open_search_form_if_needed(driver)
+        input_task_name(driver, item["task_name"])
+        robust_click(driver, driver.find_element(By.CSS_SELECTOR, "#btn_search"), "search"); wait_loading(driver)
+        robust_click(driver, driver.find_element(By.CSS_SELECTOR, "#task_list > tr:nth-child(1) button[onclick*='utils.fn.layer.toggle']"), "Toggle")
+        robust_click(driver, driver.find_element(By.CSS_SELECTOR, "#task_list > tr:nth-child(1) > td:nth-child(10) ul li:nth-child(6) > a"), "Go Import 2D")
+        WebDriverWait(driver, 60).until(lambda d: "importTask" in d.current_url); wait_loading(driver)
+        robust_click(driver, driver.find_element(By.CSS_SELECTOR, "label[for=\"txtImportFileName\"]"), "Open zTree popup")
+        WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.CSS_SELECTOR, "#zTree")))
+        tree_items = driver.find_elements(By.CSS_SELECTOR, "#zTree a")
+        target = next((a for a in tree_items if (a.text or "").strip() == item["col2"].strip()), None)
+        if not target: target = next((a for a in tree_items if item["col2"].strip() in (a.text or "").strip()), None)
+        if not target: raise Exception(f"Không tìm thấy file {item['col2']} trên zTree")
+        robust_click(driver, target, "Select file")
+        driver.find_element(By.CSS_SELECTOR, "#btn_upload").click()
+        while True:
+            try: WebDriverWait(driver, 2).until(EC.alert_is_present()); driver.switch_to.alert.accept()
+            except Exception: break
+        wait_loading(driver)
+        driver.get(project_url); wait_loading(driver); open_search_form_if_needed(driver); input_task_name(driver, item["task_name"])
+        robust_click(driver, driver.find_element(By.CSS_SELECTOR, "#btn_search"), "search"); wait_loading(driver)
+        robust_click(driver, driver.find_element(By.CSS_SELECTOR, "#task_list > tr:nth-child(1) span.ellipsis.underline"), "Task Detail")
+        wait_loading(driver)
+        reopen_btns = driver.find_elements(By.CSS_SELECTOR, "#taskReOpen")
+        if reopen_btns:
+            robust_click(driver, reopen_btns[0], "ReOpen")
+            while True:
+                try: WebDriverWait(driver, 2).until(EC.alert_is_present()); driver.switch_to.alert.accept()
+                except Exception: break
+            wait_loading(driver)
+
+    elif run_mode == MODE_IMPORT_3D:
+        open_search_form_if_needed(driver)
+        input_task_name(driver, item["task_name"])
+        robust_click(driver, driver.find_element(By.CSS_SELECTOR, "#btn_search"), "search"); wait_loading(driver)
+        robust_click(driver, driver.find_element(By.CSS_SELECTOR, "#task_list > tr:nth-child(1) button[onclick*='utils.fn.layer.toggle']"), "Toggle")
+        robust_click(driver, driver.find_element(By.CSS_SELECTOR, "#task_list > tr:nth-child(1) > td:nth-child(10) ul li:nth-child(5) > a"), "Go Import 3D")
+        WebDriverWait(driver, 60).until(lambda d: "importTask" in d.current_url); wait_loading(driver)
+        robust_click(driver, driver.find_element(By.CSS_SELECTOR, "label[for=\"txtImportFileName\"]"), "Open zTree popup")
+        WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.CSS_SELECTOR, "#zTree")))
+        tree_items = driver.find_elements(By.CSS_SELECTOR, "#zTree a")
+        target = next((a for a in tree_items if (a.text or "").strip() == item["col2"].strip()), None)
+        if not target: target = next((a for a in tree_items if item["col2"].strip() in (a.text or "").strip()), None)
+        if not target: raise Exception(f"Không tìm thấy file {item['col2']} trên zTree")
+        robust_click(driver, target, "Select file")
+        driver.find_element(By.CSS_SELECTOR, "#btn_upload").click()
+        while True:
+            try: WebDriverWait(driver, 2).until(EC.alert_is_present()); driver.switch_to.alert.accept()
+            except Exception: break
+        wait_loading(driver)
+        driver.get(project_url); wait_loading(driver); open_search_form_if_needed(driver); input_task_name(driver, item["task_name"])
+        robust_click(driver, driver.find_element(By.CSS_SELECTOR, "#btn_search"), "search"); wait_loading(driver)
+        robust_click(driver, driver.find_element(By.CSS_SELECTOR, "#task_list > tr:nth-child(1) span.ellipsis.underline"), "Task Detail")
+        wait_loading(driver)
+        reopen_btns = driver.find_elements(By.CSS_SELECTOR, "#taskReOpen")
+        if reopen_btns:
+            robust_click(driver, reopen_btns[0], "ReOpen")
+            while True:
+                try: WebDriverWait(driver, 2).until(EC.alert_is_present()); driver.switch_to.alert.accept()
+                except Exception: break
+            wait_loading(driver)
+
+    elif run_mode == MODE_STATUS_SET:
+        open_search_form_if_needed(driver)
+        input_task_name(driver, item["task_name"])
+        robust_click(driver, driver.find_element(By.CSS_SELECTOR, "#btn_search"), "search"); wait_loading(driver)
+        robust_click(driver, driver.find_element(By.CSS_SELECTOR, "#task_list > tr:nth-child(1) button[onclick*='utils.fn.layer.toggle']"), "Toggle")
+        robust_click(driver, driver.find_element(By.CSS_SELECTOR, "#task_list > tr:nth-child(1) > td:nth-child(10) div.div-pop ul li:nth-child(3) > a"), "Go Status Set"); wait_loading(driver)
+        robust_click(driver, driver.find_element(By.CSS_SELECTOR, "label[for='radioOpen']"), "Radio Open")
+        from selenium.webdriver.support.ui import Select
+        el = WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.CSS_SELECTOR, "#openSelect")))
+        if el.get_attribute("disabled") is None:
+            Select(el).select_by_value(str(item["col2"]))
+            robust_click(driver, driver.find_element(By.CSS_SELECTOR, "button[onclick='fnTaskStatusSet()']"), "Save")
+            while True:
+                try: WebDriverWait(driver, 2).until(EC.alert_is_present()); driver.switch_to.alert.accept()
+                except Exception: break
+            wait_loading(driver)
+
+    elif run_mode == MODE_ASSIGN_MASTER:
+        completed_tab = WebDriverWait(driver, 15).until(EC.presence_of_element_located((By.XPATH, "//*[normalize-space()='Completed Tasks']")))
+        robust_click(driver, completed_tab, "Completed Tasks tab"); wait_loading(driver)
+        open_search_form_if_needed(driver); input_task_name(driver, item["task_name"])
+        robust_click(driver, driver.find_element(By.CSS_SELECTOR, "#btn_search"), "search"); wait_loading(driver)
+        row = find_matching_row(driver, item["task_name"])
+        if not row: raise Exception("Not found in Completed Tasks")
+        click_task_name_from_row(driver, row, item["task_name"]); wait_loading(driver)
+        open_member_tab(driver)
+        robust_click(driver, driver.find_element(By.CSS_SELECTOR, "button.btn-member.add[onclick='searchMemberList(3)']"), "Add Master")
+        assign_member_popup_core(driver, item["col2"], "//button[@onclick='searchMember()']", "#memberList input.memberChk")
+        accept_alert_if_present(driver, timeout=3, label="Master alert")
+        click_final_save(driver)
+
+    elif run_mode == MODE_CHANGE_POINT:
+        open_search_form_if_needed(driver); input_task_name(driver, item["task_name"])
+        robust_click(driver, driver.find_element(By.CSS_SELECTOR, "#btn_search"), "search"); wait_loading(driver)
+        row = find_matching_row(driver, item["task_name"])
+        if not row: raise Exception("Task row not found")
+        click_task_name_from_row(driver, row, item["task_name"]); wait_loading(driver)
+        robust_click(driver, driver.find_element(By.CSS_SELECTOR, "button.btn-s-point"), "open point popup"); time.sleep(0.5)
+        for key, val in [("#updateWorkPoint", item["anno_point"]), ("#updateReviewPoint", item["rv_point"])]:
+            inp = WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.CSS_SELECTOR, key)))
+            inp.click(); inp.send_keys(Keys.CONTROL, "a"); inp.send_keys(Keys.DELETE); inp.clear(); inp.send_keys(str(val))
+        robust_click(driver, driver.find_element(By.CSS_SELECTOR, "button.btn-l-point"), "Confirm Point"); wait_loading(driver)
+
+    elif run_mode == MODE_3D_ANNO_REVIEW:
+        progress_tab = WebDriverWait(driver, 15).until(EC.presence_of_element_located((By.XPATH, "//li[@onclick='ingtask()']")))
+        robust_click(driver, progress_tab, "In-progress Tasks tab"); wait_loading(driver)
+        open_search_form_if_needed(driver); input_task_name(driver, item["task_name"])
+        robust_click(driver, driver.find_element(By.CSS_SELECTOR, "#btn_search"), "search"); wait_loading(driver)
+        WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.CSS_SELECTOR, "#task_list > tr")))
+        task_span = WebDriverWait(driver, 10).until(EC.element_to_be_clickable((By.CSS_SELECTOR, "#task_list > tr:nth-child(1) span.ellipsis.underline")))
+        robust_click(driver, task_span, "First task row"); wait_loading(driver)
+        open_member_tab(driver)
+        if item["worker_id"] and item["worker_id"].strip() not in ("-", "none", "None"):
+            robust_click(driver, driver.find_element(By.CSS_SELECTOR, "button#button_WorkMember.btn-member.add[onclick*='searchMemberList(0)']"), "Worker Popup")
+            assign_member_popup_core(driver, item["worker_id"], "//button[@onclick='searchMember()']", "#memberList input.memberChk")
+        if item["anno_limit"]:
+            inp = WebDriverWait(driver, 15).until(EC.presence_of_element_located((By.CSS_SELECTOR, "input#workAssignCnt")))
+            driver.execute_script("arguments[0].scrollIntoView({block:'center'});", inp)
+            inp.click(); inp.send_keys(Keys.CONTROL, "a"); inp.send_keys(Keys.DELETE); inp.clear(); inp.send_keys(str(item["anno_limit"]))
+        if item["reviewer_id"]:
+            robust_click(driver, driver.find_element(By.CSS_SELECTOR, "button.btn-member.add[onclick*='searchMemberList(1)']"), "Reviewer Popup")
+            assign_member_popup_core(driver, item["reviewer_id"], "//button[@onclick='searchMember()']", "#memberList input.memberChk")
+            accept_alert_if_present(driver, timeout=3, label="Reviewer alert")
+        click_final_save(driver)
+
+    elif run_mode == MODE_INSPECTION_AI:
+        open_search_form_if_needed(driver); input_task_name(driver, item["task_name"])
+        robust_click(driver, driver.find_element(By.CSS_SELECTOR, "#btn_search"), "search"); wait_loading(driver)
+        row = find_matching_row(driver, item["task_name"])
+        if row is None:
+            completed_tab = WebDriverWait(driver, 15).until(EC.presence_of_element_located((By.XPATH, "//li[contains(., 'Completed Tasks')]")))
+            robust_click(driver, completed_tab, "Completed Tasks"); wait_loading(driver)
+            open_search_form_if_needed(driver); input_task_name(driver, item["task_name"])
+            robust_click(driver, driver.find_element(By.CSS_SELECTOR, "#btn_search"), "search"); wait_loading(driver)
+            row = find_matching_row(driver, item["task_name"])
+        if row is None: raise Exception("Inspector task row not found")
+        click_task_name_from_row(driver, row, item["task_name"]); wait_loading(driver)
+        open_member_tab(driver)
+        role_title = WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.XPATH, "//*[normalize-space()='Inspector']")))
+        current = role_title; panel = None
+        for _ in range(8):
+            current = current.find_element(By.XPATH, "./..")
+            if "Inspector" in current.text and "Persons" in current.text: panel = current; break
+        if panel is None: raise Exception("Inspector panel not found")
+        robust_click(driver, panel.find_element(By.CSS_SELECTOR, "button.btn-member.add"), "Add Inspector")
+        assign_member_popup_core(driver, item["col2"], "//button[contains(., 'Search')]", "input.memberChk")
+        accept_alert_if_present(driver, timeout=3, label="Inspector alert")
+        click_final_save(driver)
+
+
 # =========================================================
-# LUỒNG XỬ LÝ INTERFACE THEO TỪNG BƯỚC (STEPS)
+# GIAO DIỆN PHÂN CHIA LUỒNG WEB APP THEO THỜI GIAN THỰC
 # =========================================================
 
-# BƯỚC 1: KHỞI TẠO VÀ NHẬP TÀI KHOẢN
+# --- BƯỚC 1: KHỞI TẠO VÀ NHẬP TÀI KHOẢN TỪ XA ---
 if st.session_state.step == "input_config":
-    st.subheader("🔑 Đăng nhập tài khoản AI-Studio của bạn")
-    user_id = st.text_input("Nhập ID / Tài khoản AI-Studio:")
-    user_pwd = st.text_input("Nhập Mật khẩu:", type="password")
+    st.subheader("🔑 Nhập thông tin đăng nhập AI-Studio của bạn")
+    user_id = st.text_input("Nhập ID / Tài khoản cá nhân:")
+    user_pwd = st.text_input("Nhập Mật khẩu cá nhân:", type="password")
     
     if st.button("TIẾN HÀNH ĐĂNG NHẬP (GỬI MÃ OTP)", type="primary"):
         if not uploaded_file or not user_id or not user_pwd:
-            st.error("Vui lòng nhập đầy đủ Tài khoản, Mật khẩu và Tải lên file nhiệm vụ!")
+            st.error("Vui lòng điền đủ thông tin tài khoản và upload file danh sách task trước khi bấm!")
         else:
-            # Khởi tạo driver ngầm trên Render
+            # Khởi chạy cụm trình duyệt Linux ẩn ngầm trên Render
             options = webdriver.ChromeOptions()
             options.add_argument("--headless=new")
             options.add_argument("--no-sandbox")
             options.add_argument("--disable-gpu")
             options.add_argument("--disable-dev-shm-usage")
             
-            # Lưu session vào thư mục riêng của từng session id để tránh xung đột khi nhiều người chạy cùng lúc
-            options.add_argument(f"--user-data-dir=/tmp/chrome_user_{int(time.time())}")
+            # Phân tách luồng session an toàn chống tranh chấp tài nguyên
+            options.add_argument(f"--user-data-dir=/tmp/chrome_session_{int(time.time())}")
             
             driver = webdriver.Chrome(options=options)
             driver.set_page_load_timeout(120)
             
-            # Điền thông tin đăng nhập ngầm vào AI Studio
+            # Gửi thông tin đăng nhập lên web
             driver.get("https://www.ai-studio.co.kr/login")
             wait_loading(driver)
             driver.find_element(By.ID, "id").send_keys(user_id)
@@ -128,57 +378,100 @@ if st.session_state.step == "input_config":
             driver.find_element(By.XPATH, "//button[@type='submit']").click()
             time.sleep(3)
             
-            # Lưu driver vào session để dùng cho bước tiếp theo
+            # Lưu biến Driver qua Session State để dùng cho bước xác thực OTP kế tiếp
             st.session_state.driver = driver
             st.session_state.step = "wait_otp"
             st.rerun()
 
-# BƯỚC 2: CHỜ NHẬP MÃ OTP VÀ HIỂN THỊ ẢNH SCREENSHOT THỰC TẾ
+# --- BƯỚC 2: QUÉT DÒ Ô OTP THÔNG MINH BẰNG XPATH ---
 elif st.session_state.step == "wait_otp":
-    st.subheader("📲 Xác thực OTP từ xa")
-    st.warning("Hệ thống AI-Studio đã gửi mã OTP về máy của bạn. Hãy xem ảnh chụp màn hình ngầm dưới đây để kiểm tra trạng thái:")
+    st.subheader("📲 Điền mã OTP xác thực")
+    st.warning("Hệ thống đã gửi mã bảo mật về thiết bị của bạn. Hãy theo dõi ảnh screenshot thực tế từ Server để kiểm tra:")
     
     driver = st.session_state.driver
     
-    # Chụp ảnh màn hình từ Server gửi về Web để người dùng nhìn thấy ô điền OTP của Hàn Quốc
-    screenshot_path = "/tmp/otp_screen.png"
+    # Xuất ảnh chụp màn hình thực tế ngầm về Web App cho User nhìn trực diện
+    screenshot_path = "/tmp/render_otp_capture.png"
     driver.save_screenshot(screenshot_path)
-    st.image(screenshot_path, caption="Màn hình thực tế ngầm từ Server Render")
+    st.image(screenshot_path, caption="Hình ảnh giao diện thực tế ngầm trên Server Render")
     
-    otp_code = st.text_input("Nhập mã OTP gồm 6 chữ số xuất hiện trên điện thoại của bạn:")
+    otp_code = st.text_input("Điền mã OTP gồm chữ số hiển thị ở thiết bị của bạn:")
     
     col_btn1, col_btn2 = st.columns(2)
     with col_btn1:
-        if st.button("XÁC NHẬN MÃ OTP & CHẠY TOOL", type="primary"):
+        if st.button("XÁC NHẬN MÃ OTP & BẮT ĐẦU CHẠY", type="primary"):
             if not otp_code:
-                st.error("Vui lòng điền mã OTP!")
+                st.error("Vui lòng nhập mã số xác thực OTP!")
             else:
                 try:
-                    # Điền mã OTP vào ô nhập trên trình duyệt ngầm
-                    otp_input = driver.find_element(By.ID, "otp") # Hoặc ID chính xác của ô OTP trên web Hàn
+                    # 🛠️ CƠ CHẾ DÒ DÌM CHỐNG LỖI TRỰC DIỆN (ĐA PHƯƠNG ÁN XPATH)
+                    otp_input = None
+                    otp_xpaths = [
+                        "//input[@id='otp']",
+                        "//input[@name='otp']",
+                        "//input[@type='text' and (contains(@placeholder, 'OTP') or contains(@placeholder, 'otp') or contains(@placeholder, '인증'))]",
+                        "//input[@inputmode='numeric']",
+                        "//input[@maxlength='6' or @maxlength='4']",
+                        "//div[contains(@class, 'otp')]//input"
+                    ]
+                    
+                    for xpath in otp_xpaths:
+                        elements = driver.find_elements(By.XPATH, xpath)
+                        if elements and elements[0].is_displayed():
+                            otp_input = elements[0]
+                            break
+                            
+                    if otp_input is None:
+                        raise Exception("Không tìm thấy ô nhập OTP. Kiểm tra lại xem thông tin ID/Mật khẩu ở bước 1 đã đúng chưa.")
+                    
+                    # Nạp text OTP vào form
+                    otp_input.click()
+                    otp_input.send_keys(Keys.CONTROL, "a")
+                    otp_input.send_keys(Keys.DELETE)
                     otp_input.send_keys(otp_code)
-                    driver.find_element(By.XPATH, "//button[contains(., 'Confirm')] | //button[@onclick='login()']").click()
+                    
+                    # Dò nút bấm xác thực Confirm/Submit
+                    btn_confirm = None
+                    btn_xpaths = [
+                        "//button[contains(., 'Confirm')]",
+                        "//button[contains(., 'Xác nhận')]",
+                        "//button[contains(., '인증')]",
+                        "//button[contains(@onclick, 'login')]",
+                        "//button[@type='submit' or @type='button']"
+                    ]
+                    
+                    for b_xpath in btn_selectors:
+                        btns = driver.find_elements(By.XPATH, b_xpath)
+                        if btns and btns[0].is_displayed():
+                            btn_confirm = btns[0]
+                            break
+                            
+                    if btn_confirm:
+                        btn_confirm.click()
+                    else:
+                        otp_input.send_keys(Keys.ENTER) # Gửi phím Enter thay thế nếu bị lệch nút bấm
+                        
                     time.sleep(4)
                     
-                    # Kiểm tra xem đã vượt qua màn hình login chưa
+                    # Đo lường điều hướng sau khi nhấn nút
                     if "/login" in driver.current_url:
-                        st.error("Mã OTP không chính xác hoặc đã hết hạn! Vui lòng thử lại.")
+                        st.error("Xác thực thất bại! Mã OTP sai hoặc hết hiệu lực. Hãy quan sát lại ảnh chụp phía trên.")
                     else:
                         st.session_state.step = "running"
                         st.rerun()
                 except Exception as e:
-                    st.error(f"Lỗi khi điền OTP: {e}")
+                    st.error(f"Lỗi khi thực thi nhập OTP: {e}")
                     
     with col_btn2:
-        if st.button("Hủy bỏ / Làm lại từ đầu"):
+        if st.button("Hủy / Đăng nhập lại"):
             driver.quit()
             st.session_state.driver = None
             st.session_state.step = "input_config"
             st.rerun()
 
-# BƯỚC 3: TIẾN TRÌNH CHẠY TOOL TỰ ĐỘNG VÀ IN LOGS RA MÀN HÌNH WEB
+# --- BƯỚC 3: TIẾN TRÌNH THỰC THI CHẠY KHỐI CÀY TASK TỰ ĐỘNG ---
 elif st.session_state.step == "running":
-    st.subheader("🚀 Tool đang chạy tự động ngầm trên Server...")
+    st.subheader("🚀 Đang chạy cày Task tự động trên Server...")
     driver = st.session_state.driver
     
     try:
@@ -192,33 +485,20 @@ elif st.session_state.step == "running":
         
         for idx, item in enumerate(tasks, start=1):
             try:
-                # -------------------------------------------------------------
-                # TOÀN BỘ LOGIC THỰC THI CHẠY KHỐI CHỨC NĂNG CỦA BẠN (GIỮ NGUYÊN)
-                # -------------------------------------------------------------
-                driver.get(project_url); wait_loading(driver)
-                
-                # Ví dụ mẫu luồng tìm kiếm Task của bạn:
-                open_search_form_if_needed(driver)
-                input_task_name(driver, item["task_name"])
-                robust_click(driver, driver.find_element(By.CSS_SELECTOR, "#btn_search"), "search")
-                wait_loading(driver)
-                
-                # (Đoạn này trong code thực tế sẽ chứa toàn bộ các nhánh 'if mode == MODE_IMPORT_2D', v.v. từ bản trước)
-                time.sleep(1) # Giả lập thời gian xử lý click gán
-                
-                msg = f"🟢 Hàng {item['line_no']} | Thành công | Task: {item['task_name']}"
+                execute_mode_logic(driver, item, mode)
+                msg = f"🟢 Dòng {item['line_no']} | Thành công | Task: {item['task_name']}"
             except Exception as e:
-                msg = f"🔴 Hàng {item['line_no']} | Thất bại: {str(e).splitlines()[0]} | Task: {item['task_name']}"
+                msg = f"🔴 Dòng {item['line_no']} | Thất bại: {str(e).splitlines()[0]} | Task: {item['task_name']}"
                 
             logs.append(msg)
             log_container.code("\n".join(logs))
             progress_bar.progress(idx / len(tasks))
             
-        st.success("🎉 Đã hoàn thành xử lý toàn bộ danh sách file!")
+        st.success("🎉 Bộ công cụ đã hoàn thành toàn bộ file danh sách nhiệm vụ!")
         
     except Exception as e:
-        st.error(f"Phát sinh lỗi hệ thống: {e}")
+        st.error(f"Lỗi hệ thống: {e}")
     finally:
         driver.quit()
         st.session_state.driver = None
-        st.session_state.step = "input_config" # Trở về trạng thái ban đầu để người khác có thể sử dụng tiếp
+        st.session_state.step = "input_config"

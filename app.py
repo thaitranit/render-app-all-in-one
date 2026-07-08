@@ -3,6 +3,7 @@
 
 import os
 import time
+import traceback
 import streamlit as st
 from selenium import webdriver
 from selenium.webdriver.common.by import By
@@ -362,7 +363,6 @@ if st.session_state.step == "input_config":
             options.add_argument("--no-sandbox")
             options.add_argument("--disable-gpu")
             options.add_argument("--disable-dev-shm-usage")
-            # Tăng độ phân giải ảo mặc định để chống lệch layout trên môi trường headless
             options.add_argument("--window-size=1920,1080")
             options.add_argument(f"--user-data-dir=/tmp/chrome_session_{int(time.time())}")
             
@@ -480,11 +480,21 @@ elif st.session_state.step == "running":
                 execute_mode_logic(driver, item, mode)
                 msg = f"🟢 Dòng {item['line_no']} | Thành công | Task: {item['task_name']}"
             except Exception as e:
-                # SỬA LỖI CORE LOGGER: Đọc thông báo lỗi thô đầy đủ từ Selenium e.msg thay vì splitlines()[0]
-                error_clean = getattr(e, 'msg', str(e)).replace('\n', ' ')
-                if len(error_clean) > 150:
-                    error_clean = error_clean[:150] + "..."
-                msg = f"🔴 Dòng {item['line_no']} | Thất bại: {error_clean} | Task: {item['task_name']}"
+                # 🛠️ TRÍCH XUẤT TRACEBACK CHI TIẾT TÊN LỖI VÀ DÒNG CODE GÂY LỖI TRỰC TIẾP
+                tb = e.__traceback__
+                while tb.tb_next:
+                    tb = tb.tb_next
+                line_err = tb.tb_lineno
+                err_type = type(e).__name__
+                
+                # Trích xuất chuỗi thông báo lỗi an toàn chống rỗng chữ
+                error_clean = getattr(e, 'msg', str(e)).replace('\n', ' ').strip()
+                if not error_clean or error_clean == "Message:":
+                    error_clean = str(e).strip().replace('\n', ' ')
+                if len(error_clean) > 130:
+                    error_clean = error_clean[:130] + "..."
+                    
+                msg = f"🔴 Dòng {item['line_no']} | Thất bại dòng {line_err} ({err_type}): {error_clean} | Task: {item['task_name']}"
                 
             logs.append(msg)
             log_container.code("\n".join(logs))
@@ -495,6 +505,7 @@ elif st.session_state.step == "running":
     except Exception as e:
         st.error(f"Lỗi hệ thống: {e}")
     finally:
-        driver.quit()
+        if driver:
+            driver.quit()
         st.session_state.driver = None
         st.session_state.step = "input_config"

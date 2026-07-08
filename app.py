@@ -186,57 +186,58 @@ def parse_uploaded_file(file_content):
         })
     return tasks
 
-# --- CORE LOGIC TÁC VỤ (7 CHẾ ĐỘ CHẠY TỪ BẢN GỘP) ---
+# --- CORE LOGIC TÁC VỤ (7 CHẾ ĐỘ CHẠY HOÀN CHỈNH) ---
 def execute_mode_logic(driver, item, run_mode):
     driver.get(project_url)
     wait_loading(driver)
     accept_alert_if_present(driver, timeout=1, label="init URL")
 
-    if run_mode == MODE_IMPORT_2D:
+    # 🛠️ ĐOẠN ĐỢI AJAX VÀ DÒ TÌM MENU TOGGLE ĐỘNG CHO SCRIPT 5, 6, 7 (KHẮC PHỤC LỖI DÒNG 105)
+    if run_mode in (MODE_IMPORT_2D, MODE_IMPORT_3D, MODE_STATUS_SET):
         open_search_form_if_needed(driver)
         input_task_name(driver, item["task_name"])
-        robust_click(driver, driver.find_element(By.CSS_SELECTOR, "#btn_search"), "search"); wait_loading(driver)
-        robust_click(driver, driver.find_element(By.CSS_SELECTOR, "#task_list > tr:nth-child(1) button[onclick*='utils.fn.layer.toggle']"), "Toggle")
-        robust_click(driver, driver.find_element(By.CSS_SELECTOR, "#task_list > tr:nth-child(1) > td:nth-child(10) ul li:nth-child(6) > a"), "Go Import 2D")
-        WebDriverWait(driver, 60).until(lambda d: "importTask" in d.current_url); wait_loading(driver)
-        robust_click(driver, driver.find_element(By.CSS_SELECTOR, "label[for=\"txtImportFileName\"]"), "Open zTree popup")
-        WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.CSS_SELECTOR, "#zTree")))
-        tree_items = driver.find_elements(By.CSS_SELECTOR, "#zTree a")
-        target = next((a for a in tree_items if (a.text or "").strip() == item["col2"].strip()), None)
-        if not target: target = next((a for a in tree_items if item["col2"].strip() in (a.text or "").strip()), None)
-        if not target: raise Exception(f"Không tìm thấy file {item['col2']} trên zTree")
-        robust_click(driver, target, "Select file")
-        driver.find_element(By.CSS_SELECTOR, "#btn_upload").click()
-        while True:
-            try: WebDriverWait(driver, 2).until(EC.alert_is_present()); driver.switch_to.alert.accept()
-            except Exception: break
+        robust_click(driver, driver.find_element(By.CSS_SELECTOR, "#btn_search"), "search")
         wait_loading(driver)
-        driver.get(project_url); wait_loading(driver); open_search_form_if_needed(driver); input_task_name(driver, item["task_name"])
-        robust_click(driver, driver.find_element(By.CSS_SELECTOR, "#btn_search"), "search"); wait_loading(driver)
-        robust_click(driver, driver.find_element(By.CSS_SELECTOR, "#task_list > tr:nth-child(1) span.ellipsis.underline"), "Task Detail")
-        wait_loading(driver)
-        reopen_btns = driver.find_elements(By.CSS_SELECTOR, "#taskReOpen")
-        if reopen_btns:
-            robust_click(driver, reopen_btns[0], "ReOpen")
-            while True:
-                try: WebDriverWait(driver, 2).until(EC.alert_is_present()); driver.switch_to.alert.accept()
-                except Exception: break
-            wait_loading(driver)
+        time.sleep(1.5)  # Chờ Ajax nạp danh sách task vào bảng thực tế
 
-    elif run_mode == MODE_IMPORT_3D:
-        open_search_form_if_needed(driver)
-        input_task_name(driver, item["task_name"])
-        robust_click(driver, driver.find_element(By.CSS_SELECTOR, "#btn_search"), "search"); wait_loading(driver)
-        robust_click(driver, driver.find_element(By.CSS_SELECTOR, "#task_list > tr:nth-child(1) button[onclick*='utils.fn.layer.toggle']"), "Toggle")
-        robust_click(driver, driver.find_element(By.CSS_SELECTOR, "#task_list > tr:nth-child(1) > td:nth-child(10) ul li:nth-child(5) > a"), "Go Import 3D")
+        WebDriverWait(driver, 15).until(EC.presence_of_element_located((By.CSS_SELECTOR, "#task_list > tr:nth-child(1)")))
+        first_row_text = driver.find_element(By.CSS_SELECTOR, "#task_list > tr:nth-child(1)").text.lower()
+        if "no data" in first_row_text or "không có" in first_row_text:
+            raise Exception(f"Không tìm thấy Task trên hệ thống: {item['task_name']}")
+
+        # Quét mảng tìm nút mở Menu Thao tác phụ
+        toggle_btn = None
+        toggle_xpaths = [
+            "//button[contains(@onclick, 'utils.fn.layer.toggle')]",
+            "//*[@id='task_list']/tr[1]/td[10]//button",
+            "//*[@id='task_list']/tr[1]//button[contains(@class, 'btn-toggle') or contains(@class, 'pop')]",
+            "//button[contains(@onclick, 'layer.toggle')]"
+        ]
+        for xp in toggle_xpaths:
+            btns = driver.find_elements(By.XPATH, xp)
+            if btns and btns[0].is_displayed():
+                toggle_btn = btns[0]
+                break
+        if not toggle_btn:
+            raise Exception("Không thể tìm thấy nút mở Menu phụ (Toggle Button).")
+            
+        robust_click(driver, toggle_btn, "Layer Toggle")
+        time.sleep(0.5)
+
+    # --- PHÂN CHIA NHÁNH CHẠY ---
+    if run_mode in (MODE_IMPORT_2D, MODE_IMPORT_3D):
+        # Dò tìm thẻ <a> chứa chữ 'Import' bất kể li:nth-child dòng số 5 hay số 6
+        import_link = WebDriverWait(driver, 10).until(EC.element_to_be_clickable((By.XPATH, "//*[@id='task_list']/tr[1]/td[10]//ul//li/a[contains(normalize-space(), 'Import')]")))
+        robust_click(driver, import_link, "Go Import URL")
         WebDriverWait(driver, 60).until(lambda d: "importTask" in d.current_url); wait_loading(driver)
+        
         robust_click(driver, driver.find_element(By.CSS_SELECTOR, "label[for=\"txtImportFileName\"]"), "Open zTree popup")
         WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.CSS_SELECTOR, "#zTree")))
         tree_items = driver.find_elements(By.CSS_SELECTOR, "#zTree a")
         target = next((a for a in tree_items if (a.text or "").strip() == item["col2"].strip()), None)
         if not target: target = next((a for a in tree_items if item["col2"].strip() in (a.text or "").strip()), None)
-        if not target: raise Exception(f"Không tìm thấy file {item['col2']} trên zTree")
-        robust_click(driver, target, "Select file")
+        if not target: raise Exception(f"Không thấy file {item['col2']} trên zTree")
+        robust_click(driver, target, "Select tree file")
         driver.find_element(By.CSS_SELECTOR, "#btn_upload").click()
         while True:
             try: WebDriverWait(driver, 2).until(EC.alert_is_present()); driver.switch_to.alert.accept()
@@ -255,11 +256,9 @@ def execute_mode_logic(driver, item, run_mode):
             wait_loading(driver)
 
     elif run_mode == MODE_STATUS_SET:
-        open_search_form_if_needed(driver)
-        input_task_name(driver, item["task_name"])
-        robust_click(driver, driver.find_element(By.CSS_SELECTOR, "#btn_search"), "search"); wait_loading(driver)
-        robust_click(driver, driver.find_element(By.CSS_SELECTOR, "#task_list > tr:nth-child(1) button[onclick*='utils.fn.layer.toggle']"), "Toggle")
-        robust_click(driver, driver.find_element(By.CSS_SELECTOR, "#task_list > tr:nth-child(1) > td:nth-child(10) div.div-pop ul li:nth-child(3) > a"), "Go Status Set"); wait_loading(driver)
+        # Dò tìm thẻ <a> chứa chữ 'Status' hoặc chữ Tiếng Hàn '상태'
+        status_link = WebDriverWait(driver, 10).until(EC.element_to_be_clickable((By.XPATH, "//*[@id='task_list']/tr[1]/td[10]//ul//li/a[contains(normalize-space(), 'Status') or contains(normalize-space(), '상태')]")))
+        robust_click(driver, status_link, "Go Status Set URL"); wait_loading(driver)
         robust_click(driver, driver.find_element(By.CSS_SELECTOR, "label[for='radioOpen']"), "Radio Open")
         from selenium.webdriver.support.ui import Select
         el = WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.CSS_SELECTOR, "#openSelect")))
@@ -277,7 +276,7 @@ def execute_mode_logic(driver, item, run_mode):
         open_search_form_if_needed(driver); input_task_name(driver, item["task_name"])
         robust_click(driver, driver.find_element(By.CSS_SELECTOR, "#btn_search"), "search"); wait_loading(driver)
         row = find_matching_row(driver, item["task_name"])
-        if not row: raise Exception("Not found in Completed Tasks")
+        if not row: raise Exception("Không tìm thấy task trong tab Completed Tasks")
         click_task_name_from_row(driver, row, item["task_name"]); wait_loading(driver)
         open_member_tab(driver)
         robust_click(driver, driver.find_element(By.CSS_SELECTOR, "button.btn-member.add[onclick='searchMemberList(3)']"), "Add Master")
@@ -289,7 +288,7 @@ def execute_mode_logic(driver, item, run_mode):
         open_search_form_if_needed(driver); input_task_name(driver, item["task_name"])
         robust_click(driver, driver.find_element(By.CSS_SELECTOR, "#btn_search"), "search"); wait_loading(driver)
         row = find_matching_row(driver, item["task_name"])
-        if not row: raise Exception("Task row not found")
+        if not row: raise Exception("Không tìm thấy hàng dữ liệu của Task")
         click_task_name_from_row(driver, row, item["task_name"]); wait_loading(driver)
         robust_click(driver, driver.find_element(By.CSS_SELECTOR, "button.btn-s-point"), "open point popup"); time.sleep(0.5)
         for key, val in [("#updateWorkPoint", item["anno_point"]), ("#updateReviewPoint", item["rv_point"])]:
@@ -329,7 +328,7 @@ def execute_mode_logic(driver, item, run_mode):
             open_search_form_if_needed(driver); input_task_name(driver, item["task_name"])
             robust_click(driver, driver.find_element(By.CSS_SELECTOR, "#btn_search"), "search"); wait_loading(driver)
             row = find_matching_row(driver, item["task_name"])
-        if row is None: raise Exception("Inspector task row not found")
+        if row is None: raise Exception("Không tìm thấy hàng dữ liệu của Task")
         click_task_name_from_row(driver, row, item["task_name"]); wait_loading(driver)
         open_member_tab(driver)
         role_title = WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.XPATH, "//*[normalize-space()='Inspector']")))
@@ -337,7 +336,7 @@ def execute_mode_logic(driver, item, run_mode):
         for _ in range(8):
             current = current.find_element(By.XPATH, "./..")
             if "Inspector" in current.text and "Persons" in current.text: panel = current; break
-        if panel is None: raise Exception("Inspector panel not found")
+        if panel is None: raise Exception("Inspector panel không tồn tại")
         robust_click(driver, panel.find_element(By.CSS_SELECTOR, "button.btn-member.add"), "Add Inspector")
         assign_member_popup_core(driver, item["col2"], "//button[contains(., 'Search')]", "input.memberChk")
         accept_alert_if_present(driver, timeout=3, label="Inspector alert")
@@ -417,7 +416,7 @@ elif st.session_state.step == "wait_otp":
                             break
                             
                     if otp_input is None:
-                        raise Exception("Không tìm thấy ô nhập OTP. Kiểm tra lại xem thông tin ID/Mật khẩu ở bước 1 đã đúng chưa.")
+                        raise Exception("Không tìm thấy ô nhập OTP. Kiểm tra lại thông tin ID/Mật khẩu ở bước 1.")
                     
                     otp_input.click()
                     otp_input.send_keys(Keys.CONTROL, "a")
@@ -447,7 +446,7 @@ elif st.session_state.step == "wait_otp":
                     time.sleep(4)
                     
                     if "/login" in driver.current_url:
-                        st.error("Xác thực thất bại! Mã OTP sai hoặc hết hiệu lực. Hãy quan sát lại ảnh chụp phía trên.")
+                        st.error("Xác thực thất bại! Mã OTP sai hoặc hết hiệu lực.")
                     else:
                         st.session_state.step = "running"
                         st.rerun()
@@ -480,21 +479,21 @@ elif st.session_state.step == "running":
                 execute_mode_logic(driver, item, mode)
                 msg = f"🟢 Dòng {item['line_no']} | Thành công | Task: {item['task_name']}"
             except Exception as e:
-                # 🛠️ TRÍCH XUẤT TRACEBACK CHI TIẾT TÊN LỖI VÀ DÒNG CODE GÂY LỖI TRỰC TIẾP
+                # Trích xuất Traceback chuẩn xác để in log ra màn hình
                 tb = e.__traceback__
                 while tb.tb_next:
                     tb = tb.tb_next
                 line_err = tb.tb_lineno
                 err_type = type(e).__name__
                 
-                # Trích xuất chuỗi thông báo lỗi an toàn chống rỗng chữ
+                # Format chuỗi text an toàn chống cụt chữ của Selenium
                 error_clean = getattr(e, 'msg', str(e)).replace('\n', ' ').strip()
                 if not error_clean or error_clean == "Message:":
                     error_clean = str(e).strip().replace('\n', ' ')
                 if len(error_clean) > 130:
                     error_clean = error_clean[:130] + "..."
                     
-                msg = f"🔴 Dòng {item['line_no']} | Thất bại dòng {line_err} ({err_type}): {error_clean} | Task: {item['task_name']}"
+                msg = f"🔴 Dòng {item['line_no']} | Thất bại dòng code {line_err} ({err_type}): {error_clean} | Task: {item['task_name']}"
                 
             logs.append(msg)
             log_container.code("\n".join(logs))

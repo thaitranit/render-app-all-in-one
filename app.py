@@ -128,7 +128,7 @@ def click_task_name_from_row(driver, row, task_name):
 
 def open_member_tab(driver):
     member_tab = WebDriverWait(driver, 10).until(EC.element_to_be_clickable((By.XPATH, "//a[normalize-space()='Member'] | //button[normalize-space()='Member']")))
-    robust_click(member_tab, "Member tab")
+    robust_click(driver, member_tab, "Member tab")
 
 def assign_member_popup_core(driver, member_id, search_onclick_btn, row_checkbox_selector):
     search_input = WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.ID, "searchId")))
@@ -362,6 +362,8 @@ if st.session_state.step == "input_config":
             options.add_argument("--no-sandbox")
             options.add_argument("--disable-gpu")
             options.add_argument("--disable-dev-shm-usage")
+            # Tăng độ phân giải ảo mặc định để chống lệch layout trên môi trường headless
+            options.add_argument("--window-size=1920,1080")
             options.add_argument(f"--user-data-dir=/tmp/chrome_session_{int(time.time())}")
             
             driver = webdriver.Chrome(options=options)
@@ -478,7 +480,11 @@ elif st.session_state.step == "running":
                 execute_mode_logic(driver, item, mode)
                 msg = f"🟢 Dòng {item['line_no']} | Thành công | Task: {item['task_name']}"
             except Exception as e:
-                msg = f"🔴 Dòng {item['line_no']} | Thất bại: {str(e).splitlines()[0]} | Task: {item['task_name']}"
+                # SỬA LỖI CORE LOGGER: Đọc thông báo lỗi thô đầy đủ từ Selenium e.msg thay vì splitlines()[0]
+                error_clean = getattr(e, 'msg', str(e)).replace('\n', ' ')
+                if len(error_clean) > 150:
+                    error_clean = error_clean[:150] + "..."
+                msg = f"🔴 Dòng {item['line_no']} | Thất bại: {error_clean} | Task: {item['task_name']}"
                 
             logs.append(msg)
             log_container.code("\n".join(logs))

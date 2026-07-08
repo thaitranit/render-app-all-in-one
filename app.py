@@ -3,6 +3,7 @@
 
 import os
 import time
+import uuid
 import traceback
 import streamlit as st
 from selenium import webdriver
@@ -21,13 +22,16 @@ MODE_IMPORT_3D       = "6. Auto Import & Reopen Task 3D"
 MODE_STATUS_SET      = "7. Auto Status Set (Open Step)"
 
 st.set_page_config(page_title="AI Studio Automation Suite", layout="wide")
-st.title("🤖 AI Studio Automation Suite - Super Debug Edition")
+st.title("🤖 AI Studio Automation Suite - Multi-User Web Edition")
 
-# Khởi tạo các biến lưu trạng thái tiến trình (Session State)
+# --- KHỞI TẠO BIẾN LƯU TRẠNG THÁI (SESSION STATE) CỐ ĐỊNH PHIÊN ---
 if "driver" not in st.session_state:
     st.session_state.driver = None
 if "step" not in st.session_state:
     st.session_state.step = "input_config"
+if "session_id" not in st.session_state:
+    # Sinh một chuỗi ID cố định duy nhất cho lượt chạy này của người dùng
+    st.session_state.session_id = str(uuid.uuid4())[:8]
 
 # --- GIAO DIỆN CẤU HÌNH ĐẦU VÀO ---
 col_left, col_right = st.columns([2, 1])
@@ -41,7 +45,7 @@ with col_left:
     ])
 
 with col_right:
-    st.info("💡 **Quy trình vận hành hệ thống:**\n1. Nhập link Project và Upload file danh sách Task.\n2. Điền ID/Password cá nhân để nhận mã OTP từ xa.\n3. Nhìn hình ảnh thực tế từ Server Render để điền đúng OTP xác thực.")
+    st.info(f"🆔 **Mã phiên làm việc hiện tại:** `{st.session_state.session_id}`\n\n*Hệ thống đã khóa cứng thư mục lưu Cookies cho phiên này, đảm bảo không bị mất trạng thái đăng nhập hoặc OTP khi chuyển bước ngầm.*")
 
 # --- HÀM BỔ TRỢ SELENIUM CORE ---
 def wait_loading(driver):
@@ -136,7 +140,7 @@ def click_task_name_from_row(driver, row, task_name):
 def open_member_tab(driver):
     check_and_switch_iframe(driver)
     member_tab = WebDriverWait(driver, 10).until(EC.element_to_be_clickable((By.XPATH, "//a[normalize-space()='Member'] | //button[normalize-space()='Member']")))
-    robust_click(driver, member_tab, "Member tab")
+    robust_click(member_tab, "Member tab")
 
 def assign_member_popup_core(driver, member_id, search_onclick_btn, row_checkbox_selector):
     check_and_switch_iframe(driver)
@@ -187,7 +191,7 @@ def parse_uploaded_file(file_content):
         tasks.append({"line_no": line_no, "task_name": task_name, "col2": col2, "anno_point": anno_point, "rv_point": rv_point, "worker_id": worker_id, "reviewer_id": reviewer_id, "anno_limit": anno_limit})
     return tasks
 
-# --- CORE LOGIC TÁC VỤ DÙNG ĐỂ DEBUG BIẾN ĐỘNG ---
+# --- CORE LOGIC TÁC VỤ 7 CHẾ ĐỘ ---
 def execute_mode_logic(driver, item, run_mode):
     driver.get(project_url)
     wait_loading(driver)
@@ -203,11 +207,10 @@ def execute_mode_logic(driver, item, run_mode):
         time.sleep(2)
 
         check_and_switch_iframe(driver)
-        # Dòng 105: Điểm nghẽn Timeout dữ liệu đầu vào Ajax
         WebDriverWait(driver, 15).until(EC.presence_of_element_located((By.CSS_SELECTOR, "#task_list > tr:nth-child(1)")))
         first_row_text = driver.find_element(By.CSS_SELECTOR, "#task_list > tr:nth-child(1)").text.lower()
         if "no data" in first_row_text or "không có" in first_row_text:
-            raise Exception(f"Không tìm thấy Task trên hệ thống AI-Studio: {item['task_name']}")
+            raise Exception(f"Không tìm thấy Task trên hệ thống: {item['task_name']}")
 
         toggle_btn = None
         toggle_xpaths = [
@@ -231,11 +234,9 @@ def execute_mode_logic(driver, item, run_mode):
                 robust_click(driver, toggle_btn, "Layer Toggle Fallback")
         else:
             try: driver.execute_script("utils.fn.layer.toggle(event);")
-            except Exception: raise Exception("Lỗi: Không phát hiện được cấu trúc lớp phủ Menu phụ (Toggle Button).")
-                
+            except Exception: raise Exception("Lỗi: Không phát hiện được nút Toggle phụ.")
         time.sleep(0.6)
 
-    # --- ĐIỀU HƯỚNG TÁC VỤ SAU TOGGLE ---
     if run_mode in (MODE_IMPORT_2D, MODE_IMPORT_3D):
         check_and_switch_iframe(driver)
         import_link = WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.XPATH, "//*[@id='task_list']/tr[1]//ul//li/a[contains(normalize-space(), 'Import')]")))
@@ -364,11 +365,6 @@ def execute_mode_logic(driver, item, run_mode):
         accept_alert_if_present(driver, timeout=3, label="Inspector alert")
         click_final_save(driver)
 
-
-# =========================================================
-# GIAO DIỆN PHÂN CHIA LUỒNG WEB APP THEO THỜI GIAN THỰC
-# =========================================================
-
 # --- BƯỚC 1: KHỞI TẠO VÀ NHẬP TÀI KHOẢN TỪ XA ---
 if st.session_state.step == "input_config":
     st.subheader("🔑 Nhập thông tin đăng nhập AI-Studio của bạn")
@@ -385,7 +381,9 @@ if st.session_state.step == "input_config":
             options.add_argument("--disable-gpu")
             options.add_argument("--disable-dev-shm-usage")
             options.add_argument("--window-size=1920,1080")
-            options.add_argument(f"--user-data-dir=/tmp/chrome_session_{int(time.time())}")
+            
+            # 🛠️ SỬA LỖI MẤT SESSION: Sử dụng biến session_id cố định của Streamlit
+            options.add_argument(f"--user-data-dir=/tmp/chrome_session_{st.session_state.session_id}")
             
             driver = webdriver.Chrome(options=options)
             driver.set_page_load_timeout(120)
@@ -489,6 +487,8 @@ elif st.session_state.step == "running":
     
     try:
         tasks = parse_uploaded_file(uploaded_file.read())
+        
+        # 🛠️ THÊM ĐIỀU HƯỚNG QUAN TRỌNG: Đảm bảo driver truy cập lại URL để kế thừa Session vừa lưu
         driver.get(project_url)
         wait_loading(driver)
         
@@ -501,14 +501,12 @@ elif st.session_state.step == "running":
                 execute_mode_logic(driver, item, mode)
                 msg = f"🟢 Dòng {item['line_no']} | Thành công | Task: {item['task_name']}"
             except Exception as e:
-                # Trích xuất Traceback chuẩn xác để in log ra màn hình
                 tb = e.__traceback__
                 while tb.tb_next:
                     tb = tb.tb_next
                 line_err = tb.tb_lineno
                 err_type = type(e).__name__
                 
-                # Format chuỗi text an toàn chống cụt chữ của Selenium
                 error_clean = getattr(e, 'msg', str(e)).replace('\n', ' ').strip()
                 if not error_clean or error_clean == "Message:":
                     error_clean = str(e).strip().replace('\n', ' ')
@@ -517,7 +515,6 @@ elif st.session_state.step == "running":
                     
                 msg = f"🔴 Dòng {item['line_no']} | Thất bại dòng code {line_err} ({err_type}): {error_clean} | Task: {item['task_name']}"
                 
-                # 📸 [SIÊU CỨU HỘ]: Tự động chụp màn hình tại giây bị lỗi để hiển thị lên Web App
                 try:
                     debug_screenshot = f"/tmp/error_line_{line_err}.png"
                     driver.save_screenshot(debug_screenshot)
@@ -525,7 +522,6 @@ elif st.session_state.step == "running":
                     st.image(debug_screenshot)
                 except Exception: pass
                 
-                # 🔍 [SIÊU CỨU HỘ]: In 500 ký tự HTML xung quanh vùng lỗi
                 try:
                     html_source = driver.page_source
                     st.text_area(f"📄 Cấu trúc HTML ngầm tại dòng code {line_err}:", html_source[:600], height=120)
@@ -543,3 +539,5 @@ elif st.session_state.step == "running":
         if driver: driver.quit()
         st.session_state.driver = None
         st.session_state.step = "input_config"
+        # Xóa ID phiên cũ để sẵn sàng cấp ID phiên mới cho lượt chạy sau
+        if "session_id" in st.session_state: del st.session_state.session_id

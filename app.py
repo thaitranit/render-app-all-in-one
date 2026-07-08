@@ -186,32 +186,33 @@ def parse_uploaded_file(file_content):
         })
     return tasks
 
-# --- CORE LOGIC TÁC VỤ (7 CHẾ ĐỘ CHẠY HOÀN CHỈNH) ---
+# --- CORE LOGIC TÁC VỤ (7 CHẾ ĐỘ CHẠY ĐÃ ĐƯỢC TỐI ƯU HÓA HOÀN TOÀN) ---
 def execute_mode_logic(driver, item, run_mode):
     driver.get(project_url)
     wait_loading(driver)
     accept_alert_if_present(driver, timeout=1, label="init URL")
 
-    # 🛠️ ĐOẠN ĐỢI AJAX VÀ DÒ TÌM MENU TOGGLE ĐỘNG CHO SCRIPT 5, 6, 7 (KHẮC PHỤC LỖI DÒNG 105)
+    # 🛠️ GIẢI PHÁP ĐỢI AJAX VÀ DÒ TÌM MENU TOGGLE ĐỘNG KHÔNG PHỤ THUỘC VÀO SỐ CỘT CỦA SCRIPT 5, 6, 7
     if run_mode in (MODE_IMPORT_2D, MODE_IMPORT_3D, MODE_STATUS_SET):
         open_search_form_if_needed(driver)
         input_task_name(driver, item["task_name"])
         robust_click(driver, driver.find_element(By.CSS_SELECTOR, "#btn_search"), "search")
         wait_loading(driver)
-        time.sleep(1.5)  # Chờ Ajax nạp danh sách task vào bảng thực tế
+        time.sleep(1.5)  # Chờ Ajax nạp danh sách task ổn định vào bảng thực tế
 
         WebDriverWait(driver, 15).until(EC.presence_of_element_located((By.CSS_SELECTOR, "#task_list > tr:nth-child(1)")))
         first_row_text = driver.find_element(By.CSS_SELECTOR, "#task_list > tr:nth-child(1)").text.lower()
         if "no data" in first_row_text or "không có" in first_row_text:
-            raise Exception(f"Không tìm thấy Task trên hệ thống: {item['task_name']}")
+            raise Exception(f"Không tìm thấy Task trên hệ thống AI-Studio: {item['task_name']}")
 
-        # Quét mảng tìm nút mở Menu Thao tác phụ
+        # 🛠️ XỬ LÝ TOÀN DIỆN: Quét tìm mọi phần tử có cấu trúc click Layer Toggle nằm ở cuối dòng Task đầu tiên
         toggle_btn = None
         toggle_xpaths = [
-            "//button[contains(@onclick, 'utils.fn.layer.toggle')]",
-            "//*[@id='task_list']/tr[1]/td[10]//button",
-            "//*[@id='task_list']/tr[1]//button[contains(@class, 'btn-toggle') or contains(@class, 'pop')]",
-            "//button[contains(@onclick, 'layer.toggle')]"
+            "//*[@id='task_list']/tr[1]//button[contains(@onclick, 'toggle')]",
+            "//*[@id='task_list']/tr[1]//a[contains(@onclick, 'toggle')]",
+            "//*[@id='task_list']/tr[1]/td[last()]//button",
+            "//*[@id='task_list']/tr[1]/td[last()-1]//button",
+            "//*[@id='task_list']/tr[1]//button[contains(@class, 'pop') or contains(@class, 'btn-toggle')]"
         ]
         for xp in toggle_xpaths:
             btns = driver.find_elements(By.XPATH, xp)
@@ -219,15 +220,15 @@ def execute_mode_logic(driver, item, run_mode):
                 toggle_btn = btns[0]
                 break
         if not toggle_btn:
-            raise Exception("Không thể tìm thấy nút mở Menu phụ (Toggle Button).")
+            raise Exception("Không thể tìm thấy nút mở Menu phụ (Toggle Button). Vui lòng kiểm tra lại giao diện dự án.")
             
         robust_click(driver, toggle_btn, "Layer Toggle")
         time.sleep(0.5)
 
-    # --- PHÂN CHIA NHÁNH CHẠY ---
+    # --- ĐIỀU HƯỚNG NHÁNH CHỨC NĂNG ---
     if run_mode in (MODE_IMPORT_2D, MODE_IMPORT_3D):
-        # Dò tìm thẻ <a> chứa chữ 'Import' bất kể li:nth-child dòng số 5 hay số 6
-        import_link = WebDriverWait(driver, 10).until(EC.element_to_be_clickable((By.XPATH, "//*[@id='task_list']/tr[1]/td[10]//ul//li/a[contains(normalize-space(), 'Import')]")))
+        # Dò theo Text chữ 'Import' để loại bỏ hoàn toàn lỗi lệch chỉ số cột hoặc dòng li
+        import_link = WebDriverWait(driver, 10).until(EC.element_to_be_clickable((By.XPATH, "//*[@id='task_list']/tr[1]//ul//li/a[contains(normalize-space(), 'Import')]")))
         robust_click(driver, import_link, "Go Import URL")
         WebDriverWait(driver, 60).until(lambda d: "importTask" in d.current_url); wait_loading(driver)
         
@@ -256,8 +257,8 @@ def execute_mode_logic(driver, item, run_mode):
             wait_loading(driver)
 
     elif run_mode == MODE_STATUS_SET:
-        # Dò tìm thẻ <a> chứa chữ 'Status' hoặc chữ Tiếng Hàn '상태'
-        status_link = WebDriverWait(driver, 10).until(EC.element_to_be_clickable((By.XPATH, "//*[@id='task_list']/tr[1]/td[10]//ul//li/a[contains(normalize-space(), 'Status') or contains(normalize-space(), '상태')]")))
+        # Dò tìm theo chuỗi Text chữ 'Status' hoặc chữ tiếng Hàn '상태' chống lệch cột
+        status_link = WebDriverWait(driver, 10).until(EC.element_to_be_clickable((By.XPATH, "//*[@id='task_list']/tr[1]//ul//li/a[contains(normalize-space(), 'Status') or contains(normalize-space(), '상태')]")))
         robust_click(driver, status_link, "Go Status Set URL"); wait_loading(driver)
         robust_click(driver, driver.find_element(By.CSS_SELECTOR, "label[for='radioOpen']"), "Radio Open")
         from selenium.webdriver.support.ui import Select

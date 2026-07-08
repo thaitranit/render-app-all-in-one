@@ -21,7 +21,7 @@ MODE_IMPORT_3D       = "6. Auto Import & Reopen Task 3D"
 MODE_STATUS_SET      = "7. Auto Status Set (Open Step)"
 
 st.set_page_config(page_title="AI Studio Automation Suite", layout="wide")
-st.title("🤖 AI Studio Automation Suite - Multi-User Web Edition")
+st.title("🤖 AI Studio Automation Suite - Super Debug Edition")
 
 # Khởi tạo các biến lưu trạng thái tiến trình (Session State)
 if "driver" not in st.session_state:
@@ -42,21 +42,10 @@ with col_left:
 
 with col_right:
     st.info("💡 **Quy trình vận hành hệ thống:**\n1. Nhập link Project và Upload file danh sách Task.\n2. Điền ID/Password cá nhân để nhận mã OTP từ xa.\n3. Nhìn hình ảnh thực tế từ Server Render để điền đúng OTP xác thực.")
-    with st.expander("📄 Xem hướng dẫn file mẫu (.txt)"):
-        if mode == MODE_CHANGE_POINT:
-            st.code("task_name\tanno_point\trv_point\nPCD_Slot_01\t15\t5", language="text")
-        elif mode == MODE_3D_ANNO_REVIEW:
-            st.code("task_name\tworker_id\treviewer_id\tlimit\nPCD_Box_01\tworker_thai\treviewer_an\t50\nPCD_Box_02\t-\treviewer_an\t100", language="text")
-        elif mode == MODE_STATUS_SET:
-            st.code("task_name\tstatus_value\n2D_Retouch_001\tSTEP02", language="text")
-        else:
-            st.code("task_name\tgiá_trị_cột_2\nTask_Name_01\tID_hoặc_Tên_File", language="text")
 
 # --- HÀM BỔ TRỢ SELENIUM CORE ---
 def wait_loading(driver):
-    try:
-        # Quay về khung nhìn mặc định của trang trước khi check loading
-        driver.switch_to.default_content()
+    try: driver.switch_to.default_content()
     except Exception: pass
     try:
         loading = WebDriverWait(driver, 3).until(EC.presence_of_element_located((By.CSS_SELECTOR, ".loading-wrap")))
@@ -94,15 +83,12 @@ def js_set_value(driver, elem, value):
     )
 
 def check_and_switch_iframe(driver):
-    """Tự động kiểm tra và nhảy vào iframe nếu trang sử dụng iframe cấu trúc tách biệt"""
     try:
         driver.switch_to.default_content()
         if len(driver.find_elements(By.TAG_NAME, "iframe")) > 0:
             iframes = driver.find_elements(By.XPATH, "//iframe[contains(@id,'sub') or contains(@src,'task') or contains(@name,'Frame')]")
-            if iframes:
-                driver.switch_to.frame(iframes[0])
-            else:
-                driver.switch_to.frame(0)
+            if iframes: driver.switch_to.frame(iframes[0])
+            else: driver.switch_to.frame(0)
     except Exception: pass
 
 def open_search_form_if_needed(driver):
@@ -155,30 +141,29 @@ def open_member_tab(driver):
 def assign_member_popup_core(driver, member_id, search_onclick_btn, row_checkbox_selector):
     check_and_switch_iframe(driver)
     search_input = WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.ID, "searchId")))
-    robust_click(driver, search_input, "popup search input")
+    robust_click(search_input, "popup search input")
     search_input.send_keys(Keys.CONTROL, "a")
     search_input.send_keys(Keys.DELETE)
     js_set_value(driver, search_input, member_id)
     time.sleep(0.3)
     search_btn = WebDriverWait(driver, 10).until(EC.element_to_be_clickable((By.XPATH, search_onclick_btn)))
-    robust_click(driver, search_btn, "popup search button")
+    robust_click(search_btn, "popup search button")
     time.sleep(1)
     checkbox = WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.CSS_SELECTOR, row_checkbox_selector)))
     driver.execute_script("arguments[0].checked = true;", checkbox)
     driver.execute_script("arguments[0].dispatchEvent(new Event('change', {bubbles:true}));", checkbox)
     time.sleep(0.3)
     popup_save_btn = WebDriverWait(driver, 10).until(EC.element_to_be_clickable((By.XPATH, "//button[@onclick='addMemberSearchMember()']")))
-    robust_click(driver, popup_save_btn, "popup save button")
+    robust_click(popup_save_btn, "popup save button")
     time.sleep(0.5)
 
 def click_final_save(driver):
     check_and_switch_iframe(driver)
     final_save_btn = WebDriverWait(driver, 10).until(EC.element_to_be_clickable((By.XPATH, "//button[@onclick='updateAssignCnt()']")))
-    robust_click(driver, final_save_btn, "final save button")
+    robust_click(final_save_btn, "final save button")
     time.sleep(0.5)
     accept_alert_if_present(driver, timeout=5, label="task saved alert")
 
-# --- SMART PARSER HỖ TRỢ ĐA CẤU TRÚC FILE TEXT ---
 def parse_uploaded_file(file_content):
     tasks = []
     lines = file_content.decode("utf-8-sig").splitlines()
@@ -187,11 +172,9 @@ def parse_uploaded_file(file_content):
         if not raw or raw.startswith("#"): continue
         parts = raw.split("\t") if "\t" in raw else (raw.split(",") if "," in raw else raw.split())
         if len(parts) < 2: continue
-        
         task_name, col2 = parts[0], parts[1]
         anno_point, rv_point = "0", "0"
         worker_id, reviewer_id, anno_limit = None, None, None
-        
         if len(parts) == 2: worker_id = parts[1]
         else:
             if parts[1].isdigit() and parts[2].isdigit(): anno_point, rv_point = parts[1], parts[2]
@@ -201,21 +184,15 @@ def parse_uploaded_file(file_content):
                     if parts[2].isdigit(): anno_limit = parts[2]
                     else: reviewer_id = parts[2]
                 if len(parts) >= 4 and parts[3].isdigit(): anno_limit = parts[3]
-
-        tasks.append({
-            "line_no": line_no, "task_name": task_name, "col2": col2,
-            "anno_point": anno_point, "rv_point": rv_point,
-            "worker_id": worker_id, "reviewer_id": reviewer_id, "anno_limit": anno_limit
-        })
+        tasks.append({"line_no": line_no, "task_name": task_name, "col2": col2, "anno_point": anno_point, "rv_point": rv_point, "worker_id": worker_id, "reviewer_id": reviewer_id, "anno_limit": anno_limit})
     return tasks
 
-# --- CORE LOGIC TÁC VỤ (ĐÃ SỬA LỖI TIMEOUT HOÀN TOÀN BẰNG IFRAME + JS ENGINE) ---
+# --- CORE LOGIC TÁC VỤ DÙNG ĐỂ DEBUG BIẾN ĐỘNG ---
 def execute_mode_logic(driver, item, run_mode):
     driver.get(project_url)
     wait_loading(driver)
     accept_alert_if_present(driver, timeout=1, label="init URL")
 
-    # KÍCH HOẠT HÀM ĐỂ PHÁT HIỆN IFRAME CỦA DỰ ÁN RETOUCH
     check_and_switch_iframe(driver)
 
     if run_mode in (MODE_IMPORT_2D, MODE_IMPORT_3D, MODE_STATUS_SET):
@@ -223,15 +200,15 @@ def execute_mode_logic(driver, item, run_mode):
         input_task_name(driver, item["task_name"])
         robust_click(driver, driver.find_element(By.CSS_SELECTOR, "#btn_search"), "search")
         wait_loading(driver)
-        time.sleep(2)  # Chờ Ajax nạp danh sách ổn định vào bảng thực tế
+        time.sleep(2)
 
         check_and_switch_iframe(driver)
+        # Dòng 105: Điểm nghẽn Timeout dữ liệu đầu vào Ajax
         WebDriverWait(driver, 15).until(EC.presence_of_element_located((By.CSS_SELECTOR, "#task_list > tr:nth-child(1)")))
         first_row_text = driver.find_element(By.CSS_SELECTOR, "#task_list > tr:nth-child(1)").text.lower()
         if "no data" in first_row_text or "không có" in first_row_text:
             raise Exception(f"Không tìm thấy Task trên hệ thống AI-Studio: {item['task_name']}")
 
-        # 🛠️ NÂNG CẤP THẦN TỐC: Dò tìm nút Layer Toggle bằng cả XPath lẫn ép chạy trực tiếp bằng lệnh gọi JavaScript
         toggle_btn = None
         toggle_xpaths = [
             "//*[@id='task_list']/tr[1]//button[contains(@onclick, 'toggle')]",
@@ -240,14 +217,12 @@ def execute_mode_logic(driver, item, run_mode):
             "//*[@id='task_list']/tr[1]/td[last()-1]//button",
             "//button[contains(@onclick, 'utils.fn.layer.toggle')]"
         ]
-        
         for xp in toggle_xpaths:
             btns = driver.find_elements(By.XPATH, xp)
             if btns:
                 toggle_btn = btns[0]
                 break
 
-        # FALLBACK ENGINE: Nếu tìm thấy nút nhưng bị ẩn khuất (is_displayed == False), ép kích hoạt bằng JS Script
         if toggle_btn:
             try:
                 driver.execute_script("arguments[0].scrollIntoView({block:'center'});", toggle_btn)
@@ -255,23 +230,19 @@ def execute_mode_logic(driver, item, run_mode):
             except Exception:
                 robust_click(driver, toggle_btn, "Layer Toggle Fallback")
         else:
-            # Nếu hoàn toàn không quét thấy nút, tự động tạo sự kiện gọi lệnh xử lý dòng 1 trực tiếp của AI Studio
-            try:
-                driver.execute_script("utils.fn.layer.toggle(event);")
-            except Exception:
-                raise Exception("Lỗi hệ thống: Cấu trúc menu phụ (Toggle Button) bị ẩn hoàn toàn hoặc bị chặn.")
+            try: driver.execute_script("utils.fn.layer.toggle(event);")
+            except Exception: raise Exception("Lỗi: Không phát hiện được cấu trúc lớp phủ Menu phụ (Toggle Button).")
                 
         time.sleep(0.6)
 
-    # --- ĐIỀU HƯỚNG NHÁNH CHỨC NĂNG SAU KHI MỞ TOGGLE THÀNH CÔNG ---
+    # --- ĐIỀU HƯỚNG TÁC VỤ SAU TOGGLE ---
     if run_mode in (MODE_IMPORT_2D, MODE_IMPORT_3D):
         check_and_switch_iframe(driver)
         import_link = WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.XPATH, "//*[@id='task_list']/tr[1]//ul//li/a[contains(normalize-space(), 'Import')]")))
-        driver.execute_script("arguments[0].click();", import_link) # Dùng JS click cho an toàn mượt mà tuyệt đối
-        
+        driver.execute_script("arguments[0].click();", import_link)
         WebDriverWait(driver, 60).until(lambda d: "importTask" in d.current_url); wait_loading(driver)
-        check_and_switch_iframe(driver)
         
+        check_and_switch_iframe(driver)
         robust_click(driver, driver.find_element(By.CSS_SELECTOR, "label[for=\"txtImportFileName\"]"), "Open zTree popup")
         WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.CSS_SELECTOR, "#zTree")))
         tree_items = driver.find_elements(By.CSS_SELECTOR, "#zTree a")
@@ -323,7 +294,7 @@ def execute_mode_logic(driver, item, run_mode):
         robust_click(driver, driver.find_element(By.CSS_SELECTOR, "#btn_search"), "search"); wait_loading(driver)
         check_and_switch_iframe(driver)
         row = find_matching_row(driver, item["task_name"])
-        if not row: raise Exception("Không tìm thấy task trong tab Completed Tasks")
+        if not row: raise Exception("Không tìm thấy task trong Completed Tasks")
         click_task_name_from_row(driver, row, item["task_name"]); wait_loading(driver)
         open_member_tab(driver)
         robust_click(driver, driver.find_element(By.CSS_SELECTOR, "button.btn-member.add[onclick='searchMemberList(3)']"), "Add Master")
@@ -511,7 +482,7 @@ elif st.session_state.step == "wait_otp":
             st.session_state.step = "input_config"
             st.rerun()
 
-# --- BƯỚC 3: TIẾN TRÌNH THỰC THI CHẠY KHỐI CÀY TASK TỰ ĐỘNG ---
+# --- BƯỚC 3: TIẾN TRÌNH THỰC THI CHẠY KHỐI CÀY TASK TỰ ĐỘNG + SIÊU CỨU HỘ LOG ---
 elif st.session_state.step == "running":
     st.subheader("🚀 Đang chạy cày Task tự động trên Server...")
     driver = st.session_state.driver
@@ -546,6 +517,20 @@ elif st.session_state.step == "running":
                     
                 msg = f"🔴 Dòng {item['line_no']} | Thất bại dòng code {line_err} ({err_type}): {error_clean} | Task: {item['task_name']}"
                 
+                # 📸 [SIÊU CỨU HỘ]: Tự động chụp màn hình tại giây bị lỗi để hiển thị lên Web App
+                try:
+                    debug_screenshot = f"/tmp/error_line_{line_err}.png"
+                    driver.save_screenshot(debug_screenshot)
+                    st.error(f"📸 Ảnh chụp bằng chứng lỗi tại dòng code {line_err} của Task {item['task_name']}:")
+                    st.image(debug_screenshot)
+                except Exception: pass
+                
+                # 🔍 [SIÊU CỨU HỘ]: In 500 ký tự HTML xung quanh vùng lỗi
+                try:
+                    html_source = driver.page_source
+                    st.text_area(f"📄 Cấu trúc HTML ngầm tại dòng code {line_err}:", html_source[:600], height=120)
+                except Exception: pass
+                
             logs.append(msg)
             log_container.code("\n".join(logs))
             progress_bar.progress(idx / len(tasks))
@@ -555,7 +540,6 @@ elif st.session_state.step == "running":
     except Exception as e:
         st.error(f"Lỗi hệ thống: {e}")
     finally:
-        if driver:
-            driver.quit()
+        if driver: driver.quit()
         st.session_state.driver = None
         st.session_state.step = "input_config"

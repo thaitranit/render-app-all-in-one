@@ -55,12 +55,17 @@ with col_right:
 # --- HÀM BỔ TRỢ SELENIUM CORE ---
 def wait_loading(driver):
     try:
+        # Quay về khung nhìn mặc định của trang trước khi check loading
+        driver.switch_to.default_content()
+    except Exception: pass
+    try:
         loading = WebDriverWait(driver, 3).until(EC.presence_of_element_located((By.CSS_SELECTOR, ".loading-wrap")))
         WebDriverWait(driver, 60).until(lambda d: "on" not in (loading.get_attribute("class") or ""))
     except Exception: pass
 
 def accept_alert_if_present(driver, timeout=2, label="alert"):
     try:
+        driver.switch_to.default_content()
         WebDriverWait(driver, timeout).until(EC.alert_is_present())
         alert = driver.switch_to.alert
         text = alert.text
@@ -88,8 +93,21 @@ def js_set_value(driver, elem, value):
         "arguments[0].dispatchEvent(new Event('change', {bubbles:true}));", elem, str(value)
     )
 
+def check_and_switch_iframe(driver):
+    """Tự động kiểm tra và nhảy vào iframe nếu trang sử dụng iframe cấu trúc tách biệt"""
+    try:
+        driver.switch_to.default_content()
+        if len(driver.find_elements(By.TAG_NAME, "iframe")) > 0:
+            iframes = driver.find_elements(By.XPATH, "//iframe[contains(@id,'sub') or contains(@src,'task') or contains(@name,'Frame')]")
+            if iframes:
+                driver.switch_to.frame(iframes[0])
+            else:
+                driver.switch_to.frame(0)
+    except Exception: pass
+
 def open_search_form_if_needed(driver):
     accept_alert_if_present(driver, timeout=0.2, label="before search")
+    check_and_switch_iframe(driver)
     search_frm = WebDriverWait(driver, 5).until(EC.presence_of_element_located((By.CSS_SELECTOR, "#searchFrm")))
     if "open" not in (search_frm.get_attribute("class") or ""):
         toggle_btn = WebDriverWait(driver, 5).until(EC.element_to_be_clickable((By.CSS_SELECTOR, "button[onclick*='searchFrm']")))
@@ -97,6 +115,7 @@ def open_search_form_if_needed(driver):
         WebDriverWait(driver, 3).until(lambda d: "open" in (search_frm.get_attribute("class") or ""))
 
 def input_task_name(driver, task_name):
+    check_and_switch_iframe(driver)
     search_input = WebDriverWait(driver, 20).until(EC.presence_of_element_located((By.CSS_SELECTOR, "#searchVal")))
     robust_click(driver, search_input, "Task Search Input")
     search_input.send_keys(Keys.CONTROL, "a")
@@ -106,6 +125,7 @@ def input_task_name(driver, task_name):
     time.sleep(0.2)
 
 def find_matching_row(driver, task_name):
+    check_and_switch_iframe(driver)
     rows = driver.find_elements(By.CSS_SELECTOR, "#task_list > tr")
     for row in rows:
         try:
@@ -128,30 +148,33 @@ def click_task_name_from_row(driver, row, task_name):
     robust_click(task_name_cell, "task name cell")
 
 def open_member_tab(driver):
+    check_and_switch_iframe(driver)
     member_tab = WebDriverWait(driver, 10).until(EC.element_to_be_clickable((By.XPATH, "//a[normalize-space()='Member'] | //button[normalize-space()='Member']")))
     robust_click(driver, member_tab, "Member tab")
 
 def assign_member_popup_core(driver, member_id, search_onclick_btn, row_checkbox_selector):
+    check_and_switch_iframe(driver)
     search_input = WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.ID, "searchId")))
-    robust_click(search_input, "popup search input")
+    robust_click(driver, search_input, "popup search input")
     search_input.send_keys(Keys.CONTROL, "a")
     search_input.send_keys(Keys.DELETE)
     js_set_value(driver, search_input, member_id)
     time.sleep(0.3)
     search_btn = WebDriverWait(driver, 10).until(EC.element_to_be_clickable((By.XPATH, search_onclick_btn)))
-    robust_click(search_btn, "popup search button")
+    robust_click(driver, search_btn, "popup search button")
     time.sleep(1)
     checkbox = WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.CSS_SELECTOR, row_checkbox_selector)))
     driver.execute_script("arguments[0].checked = true;", checkbox)
     driver.execute_script("arguments[0].dispatchEvent(new Event('change', {bubbles:true}));", checkbox)
     time.sleep(0.3)
     popup_save_btn = WebDriverWait(driver, 10).until(EC.element_to_be_clickable((By.XPATH, "//button[@onclick='addMemberSearchMember()']")))
-    robust_click(popup_save_btn, "popup save button")
+    robust_click(driver, popup_save_btn, "popup save button")
     time.sleep(0.5)
 
 def click_final_save(driver):
+    check_and_switch_iframe(driver)
     final_save_btn = WebDriverWait(driver, 10).until(EC.element_to_be_clickable((By.XPATH, "//button[@onclick='updateAssignCnt()']")))
-    robust_click(final_save_btn, "final save button")
+    robust_click(driver, final_save_btn, "final save button")
     time.sleep(0.5)
     accept_alert_if_present(driver, timeout=5, label="task saved alert")
 
@@ -186,51 +209,68 @@ def parse_uploaded_file(file_content):
         })
     return tasks
 
-# --- CORE LOGIC TÁC VỤ (7 CHẾ ĐỘ CHẠY ĐÃ ĐƯỢC TỐI ƯU HÓA HOÀN TOÀN) ---
+# --- CORE LOGIC TÁC VỤ (ĐÃ SỬA LỖI TIMEOUT HOÀN TOÀN BẰNG IFRAME + JS ENGINE) ---
 def execute_mode_logic(driver, item, run_mode):
     driver.get(project_url)
     wait_loading(driver)
     accept_alert_if_present(driver, timeout=1, label="init URL")
 
-    # 🛠️ GIẢI PHÁP ĐỢI AJAX VÀ DÒ TÌM MENU TOGGLE ĐỘNG KHÔNG PHỤ THUỘC VÀO SỐ CỘT CỦA SCRIPT 5, 6, 7
+    # KÍCH HOẠT HÀM ĐỂ PHÁT HIỆN IFRAME CỦA DỰ ÁN RETOUCH
+    check_and_switch_iframe(driver)
+
     if run_mode in (MODE_IMPORT_2D, MODE_IMPORT_3D, MODE_STATUS_SET):
         open_search_form_if_needed(driver)
         input_task_name(driver, item["task_name"])
         robust_click(driver, driver.find_element(By.CSS_SELECTOR, "#btn_search"), "search")
         wait_loading(driver)
-        time.sleep(1.5)  # Chờ Ajax nạp danh sách task ổn định vào bảng thực tế
+        time.sleep(2)  # Chờ Ajax nạp danh sách ổn định vào bảng thực tế
 
+        check_and_switch_iframe(driver)
         WebDriverWait(driver, 15).until(EC.presence_of_element_located((By.CSS_SELECTOR, "#task_list > tr:nth-child(1)")))
         first_row_text = driver.find_element(By.CSS_SELECTOR, "#task_list > tr:nth-child(1)").text.lower()
         if "no data" in first_row_text or "không có" in first_row_text:
             raise Exception(f"Không tìm thấy Task trên hệ thống AI-Studio: {item['task_name']}")
 
-        # 🛠️ XỬ LÝ TOÀN DIỆN: Quét tìm mọi phần tử có cấu trúc click Layer Toggle nằm ở cuối dòng Task đầu tiên
+        # 🛠️ NÂNG CẤP THẦN TỐC: Dò tìm nút Layer Toggle bằng cả XPath lẫn ép chạy trực tiếp bằng lệnh gọi JavaScript
         toggle_btn = None
         toggle_xpaths = [
             "//*[@id='task_list']/tr[1]//button[contains(@onclick, 'toggle')]",
             "//*[@id='task_list']/tr[1]//a[contains(@onclick, 'toggle')]",
             "//*[@id='task_list']/tr[1]/td[last()]//button",
             "//*[@id='task_list']/tr[1]/td[last()-1]//button",
-            "//*[@id='task_list']/tr[1]//button[contains(@class, 'pop') or contains(@class, 'btn-toggle')]"
+            "//button[contains(@onclick, 'utils.fn.layer.toggle')]"
         ]
+        
         for xp in toggle_xpaths:
             btns = driver.find_elements(By.XPATH, xp)
-            if btns and btns[0].is_displayed():
+            if btns:
                 toggle_btn = btns[0]
                 break
-        if not toggle_btn:
-            raise Exception("Không thể tìm thấy nút mở Menu phụ (Toggle Button). Vui lòng kiểm tra lại giao diện dự án.")
-            
-        robust_click(driver, toggle_btn, "Layer Toggle")
-        time.sleep(0.5)
 
-    # --- ĐIỀU HƯỚNG NHÁNH CHỨC NĂNG ---
+        # FALLBACK ENGINE: Nếu tìm thấy nút nhưng bị ẩn khuất (is_displayed == False), ép kích hoạt bằng JS Script
+        if toggle_btn:
+            try:
+                driver.execute_script("arguments[0].scrollIntoView({block:'center'});", toggle_btn)
+                driver.execute_script("arguments[0].click();", toggle_btn)
+            except Exception:
+                robust_click(driver, toggle_btn, "Layer Toggle Fallback")
+        else:
+            # Nếu hoàn toàn không quét thấy nút, tự động tạo sự kiện gọi lệnh xử lý dòng 1 trực tiếp của AI Studio
+            try:
+                driver.execute_script("utils.fn.layer.toggle(event);")
+            except Exception:
+                raise Exception("Lỗi hệ thống: Cấu trúc menu phụ (Toggle Button) bị ẩn hoàn toàn hoặc bị chặn.")
+                
+        time.sleep(0.6)
+
+    # --- ĐIỀU HƯỚNG NHÁNH CHỨC NĂNG SAU KHI MỞ TOGGLE THÀNH CÔNG ---
     if run_mode in (MODE_IMPORT_2D, MODE_IMPORT_3D):
-        # Dò theo Text chữ 'Import' để loại bỏ hoàn toàn lỗi lệch chỉ số cột hoặc dòng li
-        import_link = WebDriverWait(driver, 10).until(EC.element_to_be_clickable((By.XPATH, "//*[@id='task_list']/tr[1]//ul//li/a[contains(normalize-space(), 'Import')]")))
-        robust_click(driver, import_link, "Go Import URL")
+        check_and_switch_iframe(driver)
+        import_link = WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.XPATH, "//*[@id='task_list']/tr[1]//ul//li/a[contains(normalize-space(), 'Import')]")))
+        driver.execute_script("arguments[0].click();", import_link) # Dùng JS click cho an toàn mượt mà tuyệt đối
+        
         WebDriverWait(driver, 60).until(lambda d: "importTask" in d.current_url); wait_loading(driver)
+        check_and_switch_iframe(driver)
         
         robust_click(driver, driver.find_element(By.CSS_SELECTOR, "label[for=\"txtImportFileName\"]"), "Open zTree popup")
         WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.CSS_SELECTOR, "#zTree")))
@@ -244,22 +284,27 @@ def execute_mode_logic(driver, item, run_mode):
             try: WebDriverWait(driver, 2).until(EC.alert_is_present()); driver.switch_to.alert.accept()
             except Exception: break
         wait_loading(driver)
+        
         driver.get(project_url); wait_loading(driver); open_search_form_if_needed(driver); input_task_name(driver, item["task_name"])
         robust_click(driver, driver.find_element(By.CSS_SELECTOR, "#btn_search"), "search"); wait_loading(driver)
+        check_and_switch_iframe(driver)
         robust_click(driver, driver.find_element(By.CSS_SELECTOR, "#task_list > tr:nth-child(1) span.ellipsis.underline"), "Task Detail")
         wait_loading(driver)
+        check_and_switch_iframe(driver)
         reopen_btns = driver.find_elements(By.CSS_SELECTOR, "#taskReOpen")
         if reopen_btns:
-            robust_click(driver, reopen_btns[0], "ReOpen")
+            driver.execute_script("arguments[0].click();", reopen_btns[0])
             while True:
                 try: WebDriverWait(driver, 2).until(EC.alert_is_present()); driver.switch_to.alert.accept()
                 except Exception: break
             wait_loading(driver)
 
     elif run_mode == MODE_STATUS_SET:
-        # Dò tìm theo chuỗi Text chữ 'Status' hoặc chữ tiếng Hàn '상태' chống lệch cột
-        status_link = WebDriverWait(driver, 10).until(EC.element_to_be_clickable((By.XPATH, "//*[@id='task_list']/tr[1]//ul//li/a[contains(normalize-space(), 'Status') or contains(normalize-space(), '상태')]")))
-        robust_click(driver, status_link, "Go Status Set URL"); wait_loading(driver)
+        check_and_switch_iframe(driver)
+        status_link = WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.XPATH, "//*[@id='task_list']/tr[1]//ul//li/a[contains(normalize-space(), 'Status') or contains(normalize-space(), '상태')]")))
+        driver.execute_script("arguments[0].click();", status_link)
+        wait_loading(driver)
+        check_and_switch_iframe(driver)
         robust_click(driver, driver.find_element(By.CSS_SELECTOR, "label[for='radioOpen']"), "Radio Open")
         from selenium.webdriver.support.ui import Select
         el = WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.CSS_SELECTOR, "#openSelect")))
@@ -276,6 +321,7 @@ def execute_mode_logic(driver, item, run_mode):
         robust_click(driver, completed_tab, "Completed Tasks tab"); wait_loading(driver)
         open_search_form_if_needed(driver); input_task_name(driver, item["task_name"])
         robust_click(driver, driver.find_element(By.CSS_SELECTOR, "#btn_search"), "search"); wait_loading(driver)
+        check_and_switch_iframe(driver)
         row = find_matching_row(driver, item["task_name"])
         if not row: raise Exception("Không tìm thấy task trong tab Completed Tasks")
         click_task_name_from_row(driver, row, item["task_name"]); wait_loading(driver)
@@ -288,6 +334,7 @@ def execute_mode_logic(driver, item, run_mode):
     elif run_mode == MODE_CHANGE_POINT:
         open_search_form_if_needed(driver); input_task_name(driver, item["task_name"])
         robust_click(driver, driver.find_element(By.CSS_SELECTOR, "#btn_search"), "search"); wait_loading(driver)
+        check_and_switch_iframe(driver)
         row = find_matching_row(driver, item["task_name"])
         if not row: raise Exception("Không tìm thấy hàng dữ liệu của Task")
         click_task_name_from_row(driver, row, item["task_name"]); wait_loading(driver)
@@ -302,6 +349,7 @@ def execute_mode_logic(driver, item, run_mode):
         robust_click(driver, progress_tab, "In-progress Tasks tab"); wait_loading(driver)
         open_search_form_if_needed(driver); input_task_name(driver, item["task_name"])
         robust_click(driver, driver.find_element(By.CSS_SELECTOR, "#btn_search"), "search"); wait_loading(driver)
+        check_and_switch_iframe(driver)
         WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.CSS_SELECTOR, "#task_list > tr")))
         task_span = WebDriverWait(driver, 10).until(EC.element_to_be_clickable((By.CSS_SELECTOR, "#task_list > tr:nth-child(1) span.ellipsis.underline")))
         robust_click(driver, task_span, "First task row"); wait_loading(driver)
@@ -322,12 +370,14 @@ def execute_mode_logic(driver, item, run_mode):
     elif run_mode == MODE_INSPECTION_AI:
         open_search_form_if_needed(driver); input_task_name(driver, item["task_name"])
         robust_click(driver, driver.find_element(By.CSS_SELECTOR, "#btn_search"), "search"); wait_loading(driver)
+        check_and_switch_iframe(driver)
         row = find_matching_row(driver, item["task_name"])
         if row is None:
             completed_tab = WebDriverWait(driver, 15).until(EC.presence_of_element_located((By.XPATH, "//li[contains(., 'Completed Tasks')]")))
             robust_click(driver, completed_tab, "Completed Tasks"); wait_loading(driver)
             open_search_form_if_needed(driver); input_task_name(driver, item["task_name"])
             robust_click(driver, driver.find_element(By.CSS_SELECTOR, "#btn_search"), "search"); wait_loading(driver)
+            check_and_switch_iframe(driver)
             row = find_matching_row(driver, item["task_name"])
         if row is None: raise Exception("Không tìm thấy hàng dữ liệu của Task")
         click_task_name_from_row(driver, row, item["task_name"]); wait_loading(driver)

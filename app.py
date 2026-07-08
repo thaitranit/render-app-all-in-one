@@ -24,16 +24,15 @@ MODE_STATUS_SET      = "7. Auto Status Set (Open Step)"
 st.set_page_config(page_title="AI Studio Automation Suite", layout="wide")
 st.title("🤖 AI Studio Automation Suite - Multi-User Web Edition")
 
-# --- KHỞI TẠO BIẾN LƯU TRẠNG THÁI (SESSION STATE) CỐ ĐỊNH PHIÊN ---
+# --- BIẾN LƯU TRẠNG THÁI PHIÊN LÀM VIỆC THEO USER ---
 if "driver" not in st.session_state:
     st.session_state.driver = None
 if "step" not in st.session_state:
     st.session_state.step = "input_config"
 if "session_id" not in st.session_state:
-    # Sinh một chuỗi ID cố định duy nhất cho lượt chạy này của người dùng
     st.session_state.session_id = str(uuid.uuid4())[:8]
 
-# --- GIAO DIỆN CẤU HÌNH ĐẦU VÀO ---
+# --- GIAO DIỆN CẤU HÌNH ĐẦU VÀO ĐẦY ĐỦ ---
 col_left, col_right = st.columns([2, 1])
 
 with col_left:
@@ -44,8 +43,46 @@ with col_left:
         MODE_INSPECTION_AI, MODE_IMPORT_2D, MODE_IMPORT_3D, MODE_STATUS_SET
     ])
 
+# --- KHÔI PHỤC HOÀN TOÀN KHỐI HƯỚNG DẪN CẤU TRÚC CHI TIẾT PHÍA PHẢI ---
 with col_right:
-    st.info(f"🆔 **Mã phiên làm việc hiện tại:** `{st.session_state.session_id}`\n\n*Hệ thống đã khóa cứng thư mục lưu Cookies cho phiên này, đảm bảo không bị mất trạng thái đăng nhập hoặc OTP khi chuyển bước ngầm.*")
+    st.info(f"🆔 Phiên làm việc: `{st.session_state.session_id}`")
+    
+    st.markdown("### 📋 Hướng dẫn file cấu hình mẫu (.txt)")
+    with st.expander("📄 Xem cấu trúc chuẩn theo chức năng đang chọn", expanded=True):
+        if mode == MODE_ASSIGN_MASTER:
+            st.markdown("**Chức năng:** Tự động gán tài khoản vai trò Master View (Tab Completed).")
+            st.markdown("**Cấu trúc:** 2 cột (Tên task + ID Master)")
+            st.code("2D_TLD_Pack006_001\tmaster_thai_01\n2D_TLD_Pack006_002\tmaster_thai_01", language="text")
+            
+        elif mode == MODE_CHANGE_POINT:
+            st.markdown("**Chức năng:** Thay đổi nhanh điểm số Anno Point và Review Point.")
+            st.markdown("**Cấu trúc:** 3 cột (Tên task + Điểm Anno + Điểm Review)")
+            st.code("PCD_Parking_Slot_01\t15\t5\nPCD_Parking_Slot_02\t20\t10", language="text")
+            
+        elif mode == MODE_3D_ANNO_REVIEW:
+            st.markdown("**Chức năng:** Gán Worker, Reviewer và đặt giới hạn ảnh chạy liên tục (Limit).")
+            st.markdown("**Cấu trúc động:** Tùy chọn 2 đến 4 cột. Nếu muốn bỏ qua Worker để gán thẳng Review+Limit, hãy điền dấu `-` hoặc chữ `none` vào cột Worker.")
+            st.code("# Dạng đủ: Name, Worker, Reviewer, Limit\nPCD_Slot_Box_001\tworker_thai\treviewer_an\t50\n# Dạng chỉ gán Reviewer + Limit\nPCD_Slot_Box_002\t-\treviewer_an\t100", language="text")
+            
+        elif mode == MODE_INSPECTION_AI:
+            st.markdown("**Chức năng:** Tự động gán tài khoản vào mục Inspector.")
+            st.markdown("**Cấu trúc:** 2 cột (Tên task + ID Inspector)")
+            st.code("2D_TLD_Retouch_01\tinspect_thai_data\n2D_TLD_Retouch_02\tinspect_thai_data", language="text")
+            
+        elif mode == MODE_IMPORT_2D:
+            st.markdown("**Chức năng:** Tự động tìm file trên cây thư mục zTree để upload cho Dự án 2D (li dòng 6) và bấm Reopen.")
+            st.markdown("**Cấu trúc:** 2 cột (Tên task + Tên file đuôi .json/.zip hiển thị trên zTree)")
+            st.code("2D_TLD_Retouch_001\t20260714_front_center_001.json", language="text")
+            
+        elif mode == MODE_IMPORT_3D:
+            st.markdown("**Chức năng:** Tự động tìm file trên cây thư mục zTree để upload cho Dự án 3D (li dòng 5) và bấm Reopen.")
+            st.markdown("**Cấu trúc:** 2 cột (Tên task + Tên file hiển thị trên zTree)")
+            st.code("PCD_Parking_Slot_001\t20260714_parking_3d_001.json", language="text")
+            
+        elif mode == MODE_STATUS_SET:
+            st.markdown("**Chức năng:** Mở Task Status Set, chọn mục 'Open' và chuyển trạng thái Step.")
+            st.markdown("**Cấu trúc:** 2 cột (Tên task + Mã định danh giá trị Select box)")
+            st.code("2D_TLD_Retouch_001\tSTEP02\n2D_TLD_Retouch_002\tSTEP03", language="text")
 
 # --- HÀM BỔ TRỢ SELENIUM CORE ---
 def wait_loading(driver):
@@ -168,6 +205,7 @@ def click_final_save(driver):
     time.sleep(0.5)
     accept_alert_if_present(driver, timeout=5, label="task saved alert")
 
+# --- PARSER TỰ ĐỘNG CHUẨN HOÁ CỘT FILE DATA ---
 def parse_uploaded_file(file_content):
     tasks = []
     lines = file_content.decode("utf-8-sig").splitlines()
@@ -176,9 +214,11 @@ def parse_uploaded_file(file_content):
         if not raw or raw.startswith("#"): continue
         parts = raw.split("\t") if "\t" in raw else (raw.split(",") if "," in raw else raw.split())
         if len(parts) < 2: continue
+        
         task_name, col2 = parts[0], parts[1]
         anno_point, rv_point = "0", "0"
         worker_id, reviewer_id, anno_limit = None, None, None
+        
         if len(parts) == 2: worker_id = parts[1]
         else:
             if parts[1].isdigit() and parts[2].isdigit(): anno_point, rv_point = parts[1], parts[2]
@@ -188,7 +228,12 @@ def parse_uploaded_file(file_content):
                     if parts[2].isdigit(): anno_limit = parts[2]
                     else: reviewer_id = parts[2]
                 if len(parts) >= 4 and parts[3].isdigit(): anno_limit = parts[3]
-        tasks.append({"line_no": line_no, "task_name": task_name, "col2": col2, "anno_point": anno_point, "rv_point": rv_point, "worker_id": worker_id, "reviewer_id": reviewer_id, "anno_limit": anno_limit})
+
+        tasks.append({
+            "line_no": line_no, "task_name": task_name, "col2": col2,
+            "anno_point": anno_point, "rv_point": rv_point,
+            "worker_id": worker_id, "reviewer_id": reviewer_id, "anno_limit": anno_limit
+        })
     return tasks
 
 # --- CORE LOGIC TÁC VỤ 7 CHẾ ĐỘ ---
@@ -382,7 +427,6 @@ if st.session_state.step == "input_config":
             options.add_argument("--disable-dev-shm-usage")
             options.add_argument("--window-size=1920,1080")
             
-            # 🛠️ SỬA LỖI MẤT SESSION: Sử dụng biến session_id cố định của Streamlit
             options.add_argument(f"--user-data-dir=/tmp/chrome_session_{st.session_state.session_id}")
             
             driver = webdriver.Chrome(options=options)
@@ -488,7 +532,6 @@ elif st.session_state.step == "running":
     try:
         tasks = parse_uploaded_file(uploaded_file.read())
         
-        # 🛠️ THÊM ĐIỀU HƯỚNG QUAN TRỌNG: Đảm bảo driver truy cập lại URL để kế thừa Session vừa lưu
         driver.get(project_url)
         wait_loading(driver)
         
@@ -539,5 +582,4 @@ elif st.session_state.step == "running":
         if driver: driver.quit()
         st.session_state.driver = None
         st.session_state.step = "input_config"
-        # Xóa ID phiên cũ để sẵn sàng cấp ID phiên mới cho lượt chạy sau
         if "session_id" in st.session_state: del st.session_state.session_id

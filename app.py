@@ -357,20 +357,16 @@ if st.session_state.step == "input_config":
         if not uploaded_file or not user_id or not user_pwd:
             st.error("Vui lòng điền đủ thông tin tài khoản và upload file danh sách task trước khi bấm!")
         else:
-            # Khởi chạy cụm trình duyệt Linux ẩn ngầm trên Render
             options = webdriver.ChromeOptions()
             options.add_argument("--headless=new")
             options.add_argument("--no-sandbox")
             options.add_argument("--disable-gpu")
             options.add_argument("--disable-dev-shm-usage")
-            
-            # Phân tách luồng session an toàn chống tranh chấp tài nguyên
             options.add_argument(f"--user-data-dir=/tmp/chrome_session_{int(time.time())}")
             
             driver = webdriver.Chrome(options=options)
             driver.set_page_load_timeout(120)
             
-            # Gửi thông tin đăng nhập lên web
             driver.get("https://www.ai-studio.co.kr/login")
             wait_loading(driver)
             driver.find_element(By.ID, "id").send_keys(user_id)
@@ -378,7 +374,6 @@ if st.session_state.step == "input_config":
             driver.find_element(By.XPATH, "//button[@type='submit']").click()
             time.sleep(3)
             
-            # Lưu biến Driver qua Session State để dùng cho bước xác thực OTP kế tiếp
             st.session_state.driver = driver
             st.session_state.step = "wait_otp"
             st.rerun()
@@ -390,7 +385,6 @@ elif st.session_state.step == "wait_otp":
     
     driver = st.session_state.driver
     
-    # Xuất ảnh chụp màn hình thực tế ngầm về Web App cho User nhìn trực diện
     screenshot_path = "/tmp/render_otp_capture.png"
     driver.save_screenshot(screenshot_path)
     st.image(screenshot_path, caption="Hình ảnh giao diện thực tế ngầm trên Server Render")
@@ -404,7 +398,6 @@ elif st.session_state.step == "wait_otp":
                 st.error("Vui lòng nhập mã số xác thực OTP!")
             else:
                 try:
-                    # 🛠️ CƠ CHẾ DÒ DÌM CHỐNG LỖI TRỰC DIỆN (ĐA PHƯƠNG ÁN XPATH)
                     otp_input = None
                     otp_xpaths = [
                         "//input[@id='otp']",
@@ -424,13 +417,11 @@ elif st.session_state.step == "wait_otp":
                     if otp_input is None:
                         raise Exception("Không tìm thấy ô nhập OTP. Kiểm tra lại xem thông tin ID/Mật khẩu ở bước 1 đã đúng chưa.")
                     
-                    # Nạp text OTP vào form
                     otp_input.click()
                     otp_input.send_keys(Keys.CONTROL, "a")
                     otp_input.send_keys(Keys.DELETE)
                     otp_input.send_keys(otp_code)
                     
-                    # Dò nút bấm xác thực Confirm/Submit
                     btn_confirm = None
                     btn_xpaths = [
                         "//button[contains(., 'Confirm')]",
@@ -440,7 +431,7 @@ elif st.session_state.step == "wait_otp":
                         "//button[@type='submit' or @type='button']"
                     ]
                     
-                    for b_xpath in btn_selectors:
+                    for b_xpath in btn_xpaths:
                         btns = driver.find_elements(By.XPATH, b_xpath)
                         if btns and btns[0].is_displayed():
                             btn_confirm = btns[0]
@@ -449,11 +440,10 @@ elif st.session_state.step == "wait_otp":
                     if btn_confirm:
                         btn_confirm.click()
                     else:
-                        otp_input.send_keys(Keys.ENTER) # Gửi phím Enter thay thế nếu bị lệch nút bấm
+                        otp_input.send_keys(Keys.ENTER)
                         
                     time.sleep(4)
                     
-                    # Đo lường điều hướng sau khi nhấn nút
                     if "/login" in driver.current_url:
                         st.error("Xác thực thất bại! Mã OTP sai hoặc hết hiệu lực. Hãy quan sát lại ảnh chụp phía trên.")
                     else:

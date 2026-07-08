@@ -1,0 +1,1277 @@
+const utils = {};
+
+utils.fn = {
+    modal: {
+        /**
+         * modal.init()은 dimm영역이나 X버튼 클릭시 기본적으로 모달이 닫히게 만들어주는 함수입니다.
+         * 필요하지않다면 사용하지않으셔도됩니다.
+         */
+        init: function () {
+            const modalWrap = document.querySelectorAll('.modal-wrap');
+            const dimArea = document.querySelectorAll('.modal-wrap .dimm');
+            const modalCloseBtn = document.querySelectorAll('.modal-wrap .modal-close');
+        
+            // 클릭 이벤트 리스너를 한 번만 정의
+            function closeModal() {
+                modalWrap.forEach(el => {
+                    el.classList.remove('on');
+                });
+            }
+        
+            dimArea.forEach(el => {
+                el.addEventListener('click', closeModal);
+            });
+        
+            modalCloseBtn.forEach(el => {
+                el.addEventListener('click', closeModal);
+            });
+        },
+        /**
+         * @param {String} id - 해당 id를 가진 모달이 열리게됩니다.
+         * id를 넣지않는다면 event.target의 data-modal값으로 모달을 엽니다.
+         */
+        open: function (id) {
+            const modalId = id || event.currentTarget.getAttribute('data-modal');
+
+            if (!modalId) {
+                return;
+            }
+
+            const modalWrap = document.querySelector(`#${modalId}`);
+            modalWrap.classList.add('on');
+        },
+        /**
+         * @param {String} id - 해당 id를 가진 모달이 닫히게됩니다.
+         */
+        close: function (modalId) {
+            const modalWrap = document.querySelector(`#${modalId}`);
+            modalWrap.classList.remove('on');
+        }
+    },
+    // confirm은 다른형태로 다시 만들예정
+    confirm(option) {
+        this.message = option.message;
+        if (option.btnType) {
+            this.btnY = option.btnType.y ? option.btnType.y.display : option.btnType.y = true;
+            this.btnN = option.btnType.n ? option.btnType.n.display : option.btnType.n = false;
+        } else {
+            console.log('btnType 설정해라')
+        }
+
+        console.log(this.btnY, this.btnN)
+    },
+    /**
+     * 검색폼을 열고 닫는 UI이벤트입니다.
+     */
+    searchForm : {
+        /**
+         * @param {String} id - 해당 id를 가진 검색폼이 열리게됩니다.
+         */
+        open : function(id) {
+            document.querySelector(`#${id}`).classList.add('open');
+        },
+        /**
+         * @param {String} id - 해당 id를 가진 검색폼이 닫히게됩니다.
+         */
+        close : function(id) {
+            document.querySelector(`#${id}`).classList.remove('open');
+        },
+        /**
+         * @param {String} id - 클릭 시 해당 id를 가진 검색폼이 열리고 닫히는 토글동작을 하게됩니다.
+         * 클릭시 클릭한 대상에 active클래스를 추가합니다.
+         */
+        toggle : function(id) {
+            event.target.classList.toggle('active');
+            document.querySelector(`#${id}`).classList.toggle('open');
+        }
+    },
+    layer : {
+        open : function(event) {
+            event.currentTarget.nextElementSibling.classList.add('on');
+        },
+        toggle : function(event) {
+            event.currentTarget.nextElementSibling.classList.toggle('on');
+        },
+        close : function () {
+            document.addEventListener('click', function(e) {
+                document.querySelectorAll('.layer-wrap').forEach(el => {
+                    if (!el.contains(e.target)) {
+                        el.querySelector('.layer').classList.remove('on');
+                    }
+                });
+            })
+        },
+    },
+    /**
+     * 동일한 name값을 가진 체크박스 그룹을 관리하는 함수입니다.
+     * @param {String} checkAllId - checkAll 체크박스의 id 속성 값.
+     * @param {String} name       - 체크박스 그룹의 name 속성 값.
+     */
+    handleCheckbox(checkAllId, name) {
+        const checkAll = document.querySelector(`#${checkAllId}`);
+        const checkboxes = document.querySelectorAll(`.checkbox[name="${name}"]`);
+    
+        function handleCheckboxes() {
+            checkboxes.forEach(checkbox => {
+                checkbox.checked = checkAll.checked;
+            });
+        }
+    
+        checkAll.addEventListener('change', handleCheckboxes);
+        checkboxes.forEach(checkbox => {
+            checkbox.addEventListener('change', () => {
+                const allChecked = Array.from(checkboxes).slice(1).every(checkbox => checkbox.checked);
+                checkAll.checked = allChecked;
+            });
+        });
+    },
+    dndChip : {
+        allowDrop : function(e) {
+            e.preventDefault();
+        },
+        drag : function(e) {
+            e.dataTransfer.setData('text', e.target.id);
+        },
+        drop : function(e) {
+            e.preventDefault();
+
+            const data = e.dataTransfer.getData('text');
+            e.currentTarget.appendChild(document.querySelector(`#${data}`));
+        },
+        returnToOriginalBox : function() {
+            const dndArea = document.querySelector('.dnd-area');
+            const dndChipBox = dndArea.querySelectorAll('.chipBox');
+            const removeBtn = dndArea.querySelectorAll('.chip button');
+            
+            // removeBtn.forEach(el => {
+            //     el.addEventListener('click', function() {
+            //         const chip = this.parentNode;
+            //         const chipData = chip.getAttribute('data-chipbox');
+        
+            //         const targetChipBox = Array.from(dndChipBox).find(function(elt) {
+            //             return elt.getAttribute('data-chipbox') === chipData;
+            //         });
+        
+            //         if (targetChipBox) {
+            //             targetChipBox.appendChild(chip);
+            //         };
+            //     });
+            // });
+
+            dndArea.addEventListener('click', function(e) {
+                if (e.target.parentNode.classList.contains('chip') && e.target.tagName === 'BUTTON') {
+                    const chip = e.target.parentNode;
+                    const chipData = chip.getAttribute('data-chipbox');
+        
+                    const targetChipBox = Array.from(dndChipBox).find(function(el) {
+                        return el.getAttribute('data-chipbox') === chipData;
+                    });
+        
+                    if (targetChipBox) {
+                        targetChipBox.appendChild(chip);
+                    };
+                }
+            });
+        }
+    },
+    dndTable : {
+        setup: function () {
+            // 모든 드래그 가능한 행에 대한 설정
+            document.querySelectorAll('.dndTable tbody tr').forEach((el) => {
+                el.addEventListener('dragend', () => {
+                    // 드래그 종료 시 'dragging' 클래스 제거 및 드래그 비활성화
+                    el.classList.remove('dragging');
+                    el.draggable = false;
+                });
+            });
+        },
+        dragHandle: function (e) {
+            // 드래그 핸들 클릭 시 행을 드래그 가능하게 설정하고 'dragging' 클래스 추가
+            const row = e.target.parentNode.parentNode.parentNode;
+
+            row.classList.add('dragging');
+            row.draggable = true;
+        },
+        dropzone: function (e) {
+            const dropzone = e.currentTarget;
+            e.preventDefault();
+    
+            // 드래그 오버 이벤트 처리
+            const afterElement = this.getDragAfterElement(dropzone, e.clientY);
+            const draggable = document.querySelector('.dragging');
+
+            if (afterElement === null) {
+                // 마지막 위치에 추가
+                dropzone.appendChild(draggable);
+            } else {
+                // 특정 위치에 삽입
+                dropzone.insertBefore(draggable, afterElement);
+            }
+        },
+        getDragAfterElement: function (container, y) {
+            // 드래그 가능한 요소들을 선택 (드래그 중인 요소는 제외)
+            const draggableElements = [...container.querySelectorAll('tr:not(.dragging)')];
+        
+            // 드래그한 위치와 가장 가까운 요소를 찾음
+            return draggableElements.reduce((closest, child) => {
+                const box = child.getBoundingClientRect();
+                const offset = y - box.top - box.height / 2;
+        
+                if (offset < 0 && offset > closest.offset) {
+                    return { offset: offset, element: child };
+                } else {
+                    return closest;
+                }
+            }, { offset: Number.NEGATIVE_INFINITY }).element;
+        },
+    },
+    colorPicker : {
+        init : function() {
+            const colorPickerBoxes = document.querySelectorAll('.color-picker');
+            
+            colorPickerBoxes.forEach(box => {
+                const codeInput = box.querySelector('.code');
+                const swatchInput = box.querySelector('.swatch');
+        
+                // 초기값 설정
+                codeInput.value = swatchInput.value;
+        
+                swatchInput.addEventListener('input', function() {
+                    codeInput.value = swatchInput.value;
+                });
+        
+                box.addEventListener('click', function() {
+                    swatchInput.click();
+                });
+            });
+        }
+    },
+    customInputFile : {
+        init : function(inputId) {
+            const uploadInput = document.querySelector(`#${inputId}`);
+            const fileName = uploadInput.nextElementSibling;
+
+            uploadInput.addEventListener('change', (e) => {
+                if (fileName.tagName === 'BUTTON') {
+                    fileName.textContent = uploadInput.files[0].name;
+                } else if (fileName.tagName === 'INPUT') {
+                    fileName.value = uploadInput.files[0].name;
+                }
+
+                if (uploadInput.parentElement.firstElementChild.tagName === 'IMG') {
+                    const file = e.target.files[0];
+                    const IMG_URL = URL.createObjectURL(file);
+                    uploadInput.parentElement.firstElementChild.setAttribute('src', `${IMG_URL}`);
+                }
+            });
+        },
+        getData : function(inputId) {
+            const uploadInput = document.querySelector(`#${inputId}`);
+
+            return uploadInput.value;
+        },
+        delete : function(inputId) {
+            const uploadInput = document.querySelector(`#${inputId}`);
+            const fileName = uploadInput.nextElementSibling;
+
+            uploadInput.value = null;
+            if (fileName.tagName === 'BUTTON') {
+                fileName.textContent = uploadInput.value;
+            } else if (fileName.tagName === 'INPUT') {
+                fileName.value = uploadInput.value;
+            }
+        }
+    },
+    popupMessage : function(path) {
+        const url = path;
+        const name = 'Message';
+        const popupWidth = 900;
+        const popupHeight = 720;
+        const posX = window.innerWidth/2 - popupWidth/2;
+        const posY = window.innerHeight/2 - popupHeight/2;
+        const option = `width=${popupWidth}, height=${popupHeight}, top=${posY}, left=${posX}`;
+        
+        window.open(url, name, option);
+    },
+}
+
+/**
+ * ## SELECT Tag를 멀티선택/단일선택 가능한 커스텀한 UI로 변경해주는 기능
+ * 
+ * const multipleSelect = new Dropdown('multipleDropdown');
+ * const options = {
+ *      multiple : true,
+ *      placeholder : string,
+ *      selectedItem : array,
+ *      unmodifiable : array,
+ *      resetButtonLang : string
+ * }
+ * multipleSelect.init(options);
+ * 
+ * - init()     - 셀렉트태그를 드롭다운으로 변환하고 실행되도록 설정합니다.
+ * - add()      - 드롭다운의 목록에서 특정값을 선택처리합니다.
+ * - remove()   - 드롭다운의 선택되어있는 목록에서 특정값을 선택해제합니다.
+ * - getData()  - 드롭다운에서 선택되어있는 목록데이터를 array로 가져옵니다.
+ * - reset()    - 드롭다운을 선택목록을 초기화합니다.
+ * 
+ * ## - 새로운 기능:
+ * - 사용자의 입력에 따라 옵션 목록을 필터링하여 일치하는 항목들을 맨 위로 보여주고 강조합니다.
+ * 
+ * ## - 변경사항:
+ * - 2024-01-18: getData() 메서드의 로직 변경
+ *   - 변경 전: DOM 요소에서 'selected' 클래스를 가진 '.option-item'을 직접 조회하여 데이터 추출
+ *   - 변경 후: 내부 상태인 this.results 배열을 사용하여 선택된 항목의 데이터 반환
+ *   - 변경 이유: 데이터 처리의 일관성과 효율성 향상을 위함
+ *   - 영향: 선택된 항목들이 DOM 상태와 독립적으로 관리됩니다.
+ *   - 추가 변경사항: 옵션 목록 필터링을 위한 메서드 추가 및 중복되는 함수를 메서드로 변경
+ */
+class Dropdown {
+    /**
+     * SELECT Tag의 ID를 넣어주세요.
+     * @param {string} selectId : select ID.
+     */
+    constructor(selectId) {
+        this.selectTag = document.querySelector(`#${selectId}`);
+        this.id = selectId;
+        this.data = [];
+        this.multiple;
+        this.selectedItem = [];
+        this.placeholder;
+        this.unmodifiable = [];
+        this.disabled;
+        this.dropdown;
+        this.results = [];
+        this.initData = []; 
+
+        for (let key of this.selectTag.children) {
+            const title = key.innerText;
+            const value = key.value;
+            const selected = false;
+            const dropdownData = {
+                title,
+                value,
+                selected
+            };
+            this.data.push(dropdownData);
+        }
+
+        this.initData = this.data;
+
+        /**
+         * Dropdown 실행
+         * @param {Object} options - 드롭다운실행 시 설정할 옵션값.
+         * 
+         * const options = {
+         *     multiple : true|false,   (default: true)      - 다중선택 가능여부에 대한 선택입니다.
+         *     placeholder : string     (default: undefined) - 플레이스홀더 문구를 설정합니다.
+         *     selectedItem : array     (default: undefined) - 셀렉트박스 렌더링 시 선택되어있는 아이템목록입니다.
+         *     unmodifiable : array     (default: undefined) - chip목록에서 삭제할 수 없는 값을 설정합니다.
+         *     disabled : boolean       (default: false)     - 드롭다운의 비활성화 여부를 설정합니다.
+         *     resetButtonLang : string (default: 'reset')   - reset버튼의 텍스트를 설정합니다.
+         * }
+         */
+        this.init = function(options) {
+            if (options) {
+                this.multiple = options.multiple !== undefined ? options.multiple : true;
+                this.placeholder = options.placeholder !== undefined ? options.placeholder : this.placeholder;
+                this.selectedItem = options.selectedItem !== undefined ? options.selectedItem : this.selectedItem;
+                this.unmodifiable = options.unmodifiable !== undefined ? options.unmodifiable : this.unmodifiable;
+                this.resetButtonLang = options.resetButtonLang !== undefined ? options.resetButtonLang : 'reset';
+                this.disabled = options.disabled !== undefined ? options.disabled : false;
+
+                if (this.selectedItem.length !== 0) {
+                    this.data.forEach(dataItem => {
+                        if (this.selectedItem.includes(dataItem.value)) {
+                            dataItem.selected = true;
+                        }
+                    });
+                }
+            } else {
+                this.multiple = true;
+                this.placeholder = this.placeholder;
+                this.selectedItem = this.selectedItem;
+                this.unmodifiable = this.unmodifiable;
+                this.resetButtonLang = 'reset';
+                this.disabled = false;
+            }
+
+            // results에 초기 selectedItems 데이터추가
+            this.selectedItem.forEach(el => {
+                this.results.push(el);
+            })
+            
+            // render
+            this.render();
+            
+            // 클릭이벤트
+            this.setupEventListeners();
+        }
+    }
+
+    /**
+     * 드롭다운 컴포넌트의 초기 렌더링을 담당합니다.
+     * 드롭다운의 HTML 구조를 생성하고, 필요한 스타일과 속성을 설정합니다.
+     */
+    render() {
+        // 기존 <select> 대체
+        const select = document.querySelector(`#${this.id}`);
+        const dropdown = document.createElement('div');
+        dropdown.setAttribute('id', this.id);
+        dropdown.classList.add('dropdown');
+
+        // 새로운 요소를 추가, <select> 제거
+        select.parentElement.appendChild(dropdown);
+        select.remove();
+
+        this.dropdown = dropdown;
+
+        // 드롭다운 버튼, 텍스트 생성
+        const dropdownBtn = document.createElement('button');
+        const dropdownBtnText = document.createElement('span');
+        dropdownBtn.setAttribute('type', 'button');
+        dropdownBtn.classList.add('dropdown-btn');
+        dropdownBtnText.classList.add('dropdown-btn-text');
+        dropdownBtnText.textContent = this.placeholder;
+        dropdownBtn.appendChild(dropdownBtnText);
+
+        // 옵션 목록을 담을 컨테이너를 생성
+        const option = document.createElement('div');
+        const optionList = document.createElement('div');
+        option.classList.add('option');
+        optionList.classList.add('option-list');
+        dropdown.appendChild(dropdownBtn);
+        dropdown.appendChild(option);
+        option.appendChild(optionList);
+
+        // 다중 선택 모드일 경우, 추가적인 요소들을 생성
+        if (this.multiple) {
+            const chipBox = document.createElement('div');
+            const resetBtn = document.createElement('button');
+            const input = document.createElement('input');
+            input.classList.add('input');
+            option.appendChild(input);
+
+            chipBox.setAttribute('class', 'chipBox');
+            resetBtn.setAttribute('type', 'button');
+            input.setAttribute('placeholder', 'Search');
+            resetBtn.classList.add('dropdown-reset');
+            dropdown.classList.add('dropdown', 'multiple');
+            resetBtn.textContent = this.resetButtonLang;
+            dropdownBtn.appendChild(chipBox);
+            dropdownBtn.appendChild(resetBtn);
+
+            const paddingRightValue = resetBtn.clientWidth + 16;
+            dropdownBtn.style.paddingRight = `${paddingRightValue}px`;
+
+            // chip이 있는 옵션 목록 렌더링
+            this.renderOptions(optionList, this.data, true);
+
+            if (this.disabled) {
+                chipBox.classList.add('disabled');
+                dropdownBtn.setAttribute('disabled', true);
+                resetBtn.classList.add('hide');
+            }
+        } else {
+            this.renderOptions(optionList, this.data, false);
+        }
+
+        // 드롭다운 비활성화
+        if (this.disabled) {
+            dropdown.setAttribute('disabled', true);
+        }
+        
+    }
+
+    /**
+     * 드롭다운에 새로운 칩을 생성.
+     * @param {string} title - 칩에 표시할 텍스트
+     * @param {string} value - 칩과 연결될 값
+     * @returns {HTMLElement} 생성된 칩 엘리먼트
+     */
+    createChip(title, value, unmodifiable) {
+        const chip = document.createElement('span');
+        const itemName = document.createElement('span');
+        const chipBtn = document.createElement('button');
+        const inputHidden = document.createElement('input');
+    
+        chip.setAttribute('class', 'chip');
+        inputHidden.setAttribute('type', 'hidden');
+        inputHidden.setAttribute('value', value);
+        itemName.textContent = title;
+    
+        chipBtn.setAttribute('type', 'button');
+        chip.appendChild(itemName);
+        chip.appendChild(chipBtn);
+        chip.appendChild(inputHidden);
+    
+        if (unmodifiable && unmodifiable.includes(value)) {
+            chipBtn.setAttribute('disabled', true);
+        }
+    
+        return chip;
+    }
+
+    /**
+     * 드롭다운 내의 옵션 목록을 렌더링합니다.
+     * 전달받은 데이터를 기반으로 각 옵션 항목을 생성하며,
+     * 필요한 경우 선택된 항목에 대한 칩도 생성합니다.
+     * 
+     * @param {HTMLElement} optionList - 옵션을 렌더링할 DOM 요소입니다.
+     * @param {Array} data - 옵션 데이터 객체의 배열입니다. 각 객체는 title과 value 속성을 가집니다.
+     * @param {boolean} chips - 다중 선택 모드에서 각 선택된 항목에 대한 칩을 생성할지 여부입니다.
+     */
+    renderOptions(optionList, data, chips) {
+        for (const item of data) {
+            const optionItem = document.createElement('button');
+            optionItem.setAttribute('type', 'button');
+            optionItem.setAttribute('class', item.selected ? 'option-item selected' : 'option-item');
+            optionItem.setAttribute('value', item.value);
+            optionItem.textContent = item.title;
+
+            if(chips) {
+                if (item.selected) {
+                    const chip = this.createChip(item.title, item.value, this.unmodifiable);
+                    this.dropdown.querySelector('.dropdown-btn-text').classList.add('hide');
+                    this.dropdown.querySelector('.chipBox').insertAdjacentElement('beforeend', chip);
+                }
+            }
+            
+            optionList.appendChild(optionItem);
+        }
+    }
+
+    /**
+     * 드롭다운의 옵션 목록을 사용자의 입력에 따라 필터링하는 메서드.
+     * 입력된 텍스트와 일치하는 옵션을 강조하고, 필터링된 목록을 표시합니다.
+     */
+    filterOptions() {
+        const dataCopy = JSON.parse(JSON.stringify(this.data));
+        const optionList = this.dropdown.querySelector('.option-list');
+        const dropdownInput = this.dropdown.querySelector('.input');
+        const inputText = dropdownInput.value.toUpperCase();
+
+        // this.results에 속하는 값들은 selected를 true로 설정
+        this.results.forEach(el => {
+            const foundItem = dataCopy.find(e => e.value === el);
+            if (foundItem) {
+                foundItem.selected = true;
+            }
+        });
+
+        optionList.innerHTML = '';
+        
+        // 검색어와 일치하는 항목을 필터링
+        const matchingItems = dataCopy.filter(dataCopyItem => {
+            if (dataCopyItem.selected !== true) {
+                let str = dataCopyItem.title.toUpperCase();
+                let match = true;
+                let index = 0;
+
+                for (let i = 0; i < inputText.length; i++) {
+                    let char = inputText[i];
+                    index = str.indexOf(char, index);
+
+                    if (index === -1) {
+                        match = false;
+                        break;
+                    }
+
+                    index++;
+                }
+
+                return dropdownInput.value.length > 0 && match;
+            }
+
+            return false;
+        });
+
+        // 검색어와 일치하지 않는 항목을 필터링
+        const nonMatchingItems = dataCopy.filter(dataCopyItem => {
+            return !matchingItems.includes(dataCopyItem);
+        });
+
+        // 일치하는 항목을 배열의 맨 앞에 위치
+        const reorderedItems = matchingItems.concat(nonMatchingItems);
+
+        // 결과에 있는 값들은 selected를 true로 설정
+        reorderedItems.forEach(item => {
+            const foundResult = this.results.find(result => result === item.value);
+            if (foundResult) {
+                item.selected = true;
+            }
+        });
+        
+        // 옵션리스트 생성
+        if (dropdownInput.value.length > 0 && matchingItems.length > 0) {
+            for (let i = 0; i < reorderedItems.length; i++) {
+                const optionItem = document.createElement('button');
+                optionItem.setAttribute('type', 'button');
+                optionItem.setAttribute('class', reorderedItems[i].selected ? 'option-item selected' : 'option-item');
+                optionItem.setAttribute('value', reorderedItems[i].value);
+                optionItem.textContent = reorderedItems[i].title;
+    
+                optionList.insertAdjacentElement('beforeend', optionItem);
+
+                // matchingItems에 해당하는 element를 찾아서 클래스 추가하기
+                const matchingElements = matchingItems.map(matchingItem => {
+                    const matchingIndex = reorderedItems.findIndex(item => item === matchingItem);
+                    const matchingElement = optionList.children[matchingIndex];
+
+                    if (matchingElement) {
+                        matchingElement.classList.add('highlight');
+                    }
+
+                    return matchingElement;
+                });
+            }
+
+            // 옵션 리스트의 스크롤 위치를 맨 위로 설정
+            optionList.scrollTo(0, 0);
+        } else {
+            // 검색어가 없거나 일치하는 항목이 없는 경우, 원래의 리스트 보여주기
+            this.renderOptions(optionList, dataCopy, false);
+        }
+
+        // 각 옵션 항목에 클릭 이벤트 리스너 추가
+        this.dropdown.querySelectorAll('.option-item').forEach(el => {
+            el.addEventListener('click', e => {
+                this.add(e.target.value);
+                e.target.classList.remove('highlight');
+            })
+        });
+    }
+
+    /**
+     * 드롭다운의 옵션 목록을 새로고침하거나 초기 상태로 리셋하는 메서드.
+     * @param {boolean} initData - 초기 데이터로 리셋할지 여부를 나타냅니다.
+     *                             true일 경우, 드롭다운을 초기 상태로 복원합니다.
+     */
+    refreshDropdown(initData) {
+        // initData가 true이면 드롭다운을 초기 상태로 리셋
+        if (initData) {
+            this.data = JSON.parse(JSON.stringify(this.initData));
+            const chipBox = this.dropdown.querySelector('.chipBox');
+            chipBox.innerHTML = '';
+        }
+
+        const dataCopy = JSON.parse(JSON.stringify(this.data));
+        const optionList = this.dropdown.querySelector('.option-list');
+        
+        optionList.innerHTML = '';
+
+        // this.results에 속하는 값들은 selected를 true로 설정
+        this.results.forEach(el => {
+            const foundItem = dataCopy.find(e => e.value === el);
+            if (foundItem) {
+                foundItem.selected = true;
+            }
+        });
+
+        // 옵션 목록 렌더링
+        this.renderOptions(optionList, dataCopy, initData);
+
+        // 옵션 리스트의 스크롤 위치를 맨 위로 설정
+        optionList.scrollTo(0, 0);
+
+        // 각 옵션 항목에 클릭 이벤트 리스너 추가
+        this.dropdown.querySelectorAll('.option-item').forEach(el => {
+            el.addEventListener('click', e => {
+                this.add(e.target.value);
+            })
+        });
+    }
+
+    /**
+     * 드롭다운 구성 요소에 이벤트 리스너를 설정하는 메서드.
+     * 다중 선택과 단일 선택 모드에 따라 적절한 이벤트 리스너를 추가합니다.
+     */
+    setupEventListeners() {
+        // 드롭다운 외부를 클릭했을 때 드롭다운을 닫기
+        document.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const dropdowns = document.querySelectorAll('.dropdown');
+            dropdowns.forEach((el) => {
+                if (!el.contains(e.target)) {
+                    el.classList.remove('on');
+                }
+            });
+            
+            // 드롭다운을 토글
+            if (e.target.parentNode.id === this.dropdown.id) {
+                if (!e.target.parentNode.classList.contains('on')) {
+                    e.target.parentNode.classList.add('on');
+                    
+                    // 다중 선택 모드일 경우, 입력 필드를 비우고 드롭다운을 새로고침
+                    if (this.multiple) {
+                        e.target.parentNode.querySelector('.input').value = '';
+                        this.refreshDropdown(false);
+                    }
+                } else {
+                    e.target.parentNode.classList.remove('on');
+                }
+            }
+        });
+        
+        // 다중 선택 모드일 때의 이벤트 리스너 설정
+        if (this.multiple) {
+            const chipBox = this.dropdown.querySelector('.chipBox');
+            const input = this.dropdown.querySelector('.input');
+            const resetBtn = this.dropdown.querySelector('.dropdown-reset');
+            
+            // chipBox에서의 클릭 이벤트 처리
+            chipBox.addEventListener('click', (e) => {
+                e.stopPropagation();
+                if (e.target.tagName === 'BUTTON') {
+                    this.remove(e.target.nextElementSibling.value);
+                }
+            });
+            
+            // 리셋 버튼의 클릭 이벤트 처리
+            resetBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                this.reset();
+            });
+            
+            // 입력 필드의 키업 이벤트 처리
+            input.addEventListener('keyup', () => {
+                this.filterOptions();
+            });
+            
+            // 옵션 항목의 클릭 이벤트 처리
+            this.dropdown.querySelectorAll('.option-item').forEach(el => {
+                el.addEventListener('click', e => {
+                    this.add(e.target.value);
+                });
+            });
+        } else {
+            // 단일 선택 모드일 때의 이벤트 리스너 설정
+            this.dropdown.addEventListener('click', (e) => {
+                const optionItem = e.target.closest('.option-item');
+                if (optionItem) {
+                    // 다른 모든 옵션 항목의 'selected' 클래스 제거
+                    this.dropdown.querySelectorAll('.option-item').forEach(el => {
+                        el.classList.remove('selected');
+                    });
+
+                    // 클릭된 항목에 'selected' 클래스 추가
+                    optionItem.classList.add('selected');
+                    this.dropdown.querySelector('.dropdown-btn-text').textContent = optionItem.innerText;
+
+                    // this.results를 현재 선택된 항목의 value로 업데이트
+                    this.results = [optionItem.getAttribute('value')];
+                }
+            });
+        }
+    }
+
+    /**
+     * 드롭다운의 칩 추가 및 선택처리하는 메서드
+     * @param {string|string[]} 드롭다운에서 선택처리할 값입니다.
+     */
+    add(data) {
+        if (!this.multiple) {
+            return console.error('단일타입은 사용할 수 없는 기능입니다.')
+        }
+
+        const dropdown = this.dropdown;
+        const dropdownBtnText = dropdown.querySelector('.dropdown-btn-text');
+
+        // 선택된 항목에 대해 칩을 생성하고 DOM에 추가하는 내부 함수
+        const handleDataItem = (dataItem) => { 
+            const selectedOption = dropdown.querySelector(`.option-item[value="${dataItem}"]`);
+    
+            if (selectedOption && !selectedOption.classList.contains('selected')) {
+                const chip = this.createChip(selectedOption.innerText, dataItem);
+                dropdown.querySelector('.chipBox').appendChild(chip);
+                selectedOption.classList.add('selected');
+            }
+        };
+
+        if (!dropdown.getAttribute('disabled')) {
+            // data가 배열인 경우, 각 항목에 대해 handleDataItem을 실행
+            if (Array.isArray(data)) {
+                data.forEach(handleDataItem);
+                this.results.push(...data.filter(item => !this.results.includes(item)));  // 중복 방지
+            } else if (typeof data === 'string') {
+                // data가 문자열인 경우, 각 항목에 대해 handleDataItem을 실행
+                handleDataItem(data);
+                if (!this.results.includes(data)) {  // 중복 방지
+                    this.results.push(data);
+                }
+            }
+        } else {
+            console.log('disabled 상태에서는 추가할 수 없습니다.');
+        }
+        
+        // 선택이 완료되면 기본 텍스트(placeholder) 숨깁
+        dropdownBtnText.classList.add('hide');
+    }
+    
+    /**
+     * 드롭다운의 칩 제거 및 선택해제하는 메서드
+     * @param {string|string[]} 드롭다운에서 선택해제할 값입니다.
+     */
+    remove(data) {
+        if (!this.multiple) {
+            return console.error('단일타입은 사용할 수 없는 기능입니다.')
+        }
+    
+        const dropdownBtnText = this.dropdown.querySelector('.dropdown-btn-text');
+        const chipBox = this.dropdown.querySelector('.chipBox');
+        const valuesToRemove = Array.isArray(data) ? data : [data];
+    
+        if (!this.dropdown.getAttribute('disabled')) {
+            valuesToRemove.forEach(value => {
+                const chip = chipBox.querySelector(`.chip input[value="${value}"]`);
+    
+                if (this.unmodifiable.includes(value)) {
+                    console.log(`${value}는 삭제할 수 없습니다.`);
+                    return;
+                }
+    
+                this.dropdown.querySelectorAll('.option-item').forEach(el => {
+                    if (el.value === value) {
+                        el.classList.remove('selected');
+                        const index = this.results.indexOf(value);
+                        if (index > -1) {
+                            this.results.splice(index, 1);
+                        }
+                    }
+                });
+    
+                if (chip) {
+                    chip.parentElement.remove();
+                }
+            });
+    
+            const foundItem = this.data.find(e => e.value === data);
+            if (foundItem) {
+                foundItem.selected = false;
+            }
+    
+            this.filterOptions();
+        } else {
+            console.log('disabled 상태에서는 삭제할 수 없습니다.');
+        }
+    
+        if (chipBox.children.length === 0) {
+            dropdownBtnText.classList.remove('hide');
+        }
+    }
+
+    /**
+     * Dropdown의 데이터 배열 반환.
+     * @returns {Array} Dropdown의 데이터 배열
+     */
+    getData() {
+        const selectedData = this.results.map(resultValue => {
+            // this.data에서 value가 resultValue와 일치하는 항목을 찾음
+            const foundItem = this.data.find(item => item.value === resultValue);
+            // 일치하는 항목이 있으면 해당 항목의 데이터를 반환
+            return foundItem ? { title: foundItem.title, value: foundItem.value } : null;
+        }).filter(item => item !== null);  // null 값 제거
+    
+        if (selectedData.length === 0) {
+            console.log(`${this.id}의 데이터가 없습니다.`, null);
+            return null;
+        } else {
+            console.log(`${this.id}의 데이터가 있습니다.`, selectedData);
+            return selectedData;
+        }
+    }
+
+    /**
+     * Dropdown 초기화
+     * unmodifiable, selectedItem으로 지정된 값은 초기화하지 않습니다.
+     */
+    reset() {
+        if (!this.dropdown.getAttribute('disabled')) {
+            this.dropdown.querySelectorAll('.option-item').forEach((el) => {
+                // unmodifiable, selectedItem 가 아니면 class="selected" 삭제
+                if (!this.unmodifiable.includes(el.value) && !this.selectedItem.includes(el.value)) {
+                    el.classList.remove('selected');
+                }
+            });
+
+            // this.results 비우기
+            this.results = [];
+
+            if (this.multiple === true) {
+                this.dropdown.querySelector('.input').value = '';
+                // results에 초기 selectedItems 데이터 추가
+                this.selectedItem.forEach(el => {
+                    this.results.push(el);
+                })
+
+                // 현재 옵션 리스트 지우고 초기 데이터로 재생성
+                this.refreshDropdown(true);
+
+                this.dropdown.querySelectorAll('.chipBox .chip').forEach((el) => {
+                    if (!this.unmodifiable.includes(el.querySelector('input').value) && !this.selectedItem.includes(el.querySelector('input').value)) {
+                        el.remove();
+                    }
+                });
+                if (this.unmodifiable.length === 0) {
+                    this.dropdown.querySelector('.dropdown-btn-text').classList.remove('hide');
+                }
+            } else {
+                const dropdownBtnText = this.dropdown.querySelector('.dropdown-btn-text');
+                dropdownBtnText.textContent = this.placeholder;
+            }
+        } else {
+            console.log('disabled 상태에서는 초기화할 수 없습니다.');
+        }
+    }
+
+    /**
+     * 드롭다운 비활성화
+     */
+    disable() {
+        this.dropdown.setAttribute('disabled', true);
+        this.dropdown.classList.add('disabled');
+        this.dropdown.classList.remove('on');
+
+        if (this.multiple) {            
+            this.dropdown.querySelector('.chipBox').classList.add('disabled');
+            this.dropdown.querySelector('.dropdown-reset').classList.add('hide');
+        }
+    }
+
+    /**
+     * 드롭다운 활성화
+     */
+    enable() {
+        this.dropdown.removeAttribute('disabled', true);
+        this.dropdown.classList.remove('disabled');
+
+        if (this.multiple) {            
+            this.dropdown.querySelector('.chipBox').classList.remove('disabled');
+            this.dropdown.querySelector('.dropdown-reset').classList.remove('hide');
+        }
+    }
+}
+
+
+
+
+/**
+ * ## INPUT Tag를 다중검색이 가능한 UI로 변경하는 기능
+ * 
+ * const multiInput = new MultiInpit('inputId');
+ * const options = {
+ *      placeholder : string,
+ *      resetButtonLang : string
+ *      disabled : true|false
+ * }
+ * multiInput.init(options);
+ * 
+ * - init()     - 인풋태그를 다중검색목록으로 변환하고 실행되도록 설정합니다.
+ * - add()      - 다중검색목록에 특정값을 추가합니다.
+ * - remove()   - 다중검색목록의 특정값을 제거합니다.
+ * - getData()  - 다중검색목록의 데이터를 가져옵니다.
+ * - reset()    - 다중검색목록을 초기화합니다.
+ * 
+ * ## - 새로운 기능:
+ * - 단일 검색 지원
+ * 
+ * ## - 변경사항:
+ * - 2024-01-18: getData() 메서드에 단일 검색의 경우 추가
+ *   - 변경 전: chip으로 생성되지 않은 경우 입력 필드의 입력값은 검색되지 않음 
+ *   - 변경 후: 입력 필드에 입력값이 있으면 chip으로 생성하여 검색 가능하도록 변경
+ *   - 변경 이유: 기획 요청
+ * 
+ * - 2024-02-20: getData() 메서드에 줄바꿈으로 분할하여 uniqueValues 배열 생성 로직 추가
+ *   - 변경 전: getData() 호출 시에 key event와 다르게 줌바꿈에서 split되지 않음
+ *   - 변경 후: getData() 호출 시에 줌바꿈에서 split
+ *   - 변경 이유: 요청
+ */
+class MultiInput {
+    constructor(inputId) {
+        this.id = inputId;
+        this.placeholder = '<spring:message code="message.message.entersearch" text="검색어를 입력하세요."/>';
+        this.resetButtonLang = 'reset';
+        this.disabled = false;
+        this.max = 30;
+
+        /**
+         * MultiInput 실행
+         * @param {Object} options - 다중검색실행 시 설정할 옵션값.
+         */
+        this.init = function(options) {
+            if (options) {
+                this.placeholder = options.placeholder !== undefined ? options.placeholder : this.placeholder;
+                this.resetButtonLang = options.resetButtonLang !== undefined ? options.resetButtonLang : this.resetButtonLang;
+                this.disabled = options.disabled !== undefined ? options.disabled : this.disabled;
+                this.max = options.max !== undefined ? options.max : this.max;
+            }
+            
+            // 다중검색목록 생성 및 기존 input태그 삭제
+            const multiInputContainer = document.createElement('div');
+            const multiInput = document.createElement('textarea');
+            const input = document.querySelector(`#${this.id}`);
+            
+            multiInput.setAttribute('id', this.id);
+            multiInput.setAttribute('placeholder', this.placeholder);
+            multiInput.setAttribute('spellcheck', 'false');
+            multiInput.classList.add('multiInput');
+            multiInputContainer.classList.add('multiInput-container');
+            multiInputContainer.appendChild(multiInput);
+            input.parentElement.appendChild(multiInputContainer);
+            input.remove();
+            
+            // 칩박스, 리셋버튼 생성
+            const chipBox = document.createElement('div');
+            const resetBtn = document.createElement('button');
+            chipBox.classList.add('chipBox', 'blind');
+            resetBtn.textContent = this.resetButtonLang;
+            resetBtn.setAttribute('type', 'button');
+            resetBtn.classList.add('multiInput-reset', 'hide');
+            multiInputContainer.appendChild(chipBox);
+            multiInputContainer.appendChild(resetBtn);
+            chipBox.style.paddingRight = `${resetBtn.getBoundingClientRect().width + 16}px`;
+
+            if (this.disabled) {
+                multiInput.setAttribute('disabled', true);
+                chipBox.classList.add('disabled');
+            }
+
+            // 다중검색이벤트
+            multiInput.addEventListener('keyup', (e) => {
+                if (e.key === 'Enter') {
+                    const values = e.target.value.split('\n');
+                    let setValue = new Set(values);
+                    setValue = [...setValue];
+                    setValue = setValue.filter(setValue => setValue !== '');
+                    // const setValue = values.map(values => values.trim()).filter(values => values !=='');
+                    
+                    // 다중검색에 추가 시 기존에 있는 값을 체크하기 위한 배열
+                    const data = Array.from(multiInput.nextElementSibling.querySelectorAll('.chip')).map(el => el.innerText);
+
+                    setValue.forEach((el) => {
+                        if (!data.includes(el)) {
+                            this.add(el);
+                        } else {
+                            console.log(`${el}은 이미 입력되어있습니다.`);
+                            // alert(`${el}은 이미 입력되어있습니다.`);
+                        }
+                    });
+
+                    multiInput.value = '';
+                }
+            });
+
+            // 칩의 X버튼 클릭이벤트
+            chipBox.addEventListener('click', (e) => {
+                if (e.target.tagName === 'BUTTON') {
+                    const value = e.target.parentElement.innerText;
+                    this.remove(value);
+                }
+            })
+
+            // reset버튼 클릭이벤트
+            resetBtn.addEventListener('click', () => {
+                this.reset();
+            });
+        }
+    }
+
+    /**
+     * 다중검색목록에 칩을 추가하는 메서드
+     * @param {string|string[]} data - 추가할 데이터입니다.
+     */
+    add(data) {
+        const multiInput = document.querySelector(`#${this.id}`);
+        const resetBtn = multiInput.parentElement.querySelector('.multiInput-reset');
+        const values = Array.from(multiInput.nextElementSibling.querySelectorAll('.chip')).map(el => el.innerText);
+
+        if (!multiInput.getAttribute('disabled')) {
+            if (Array.isArray(data)) {
+                let setValue = new Set(data);
+                setValue = [...setValue];
+                setValue = setValue.filter(setValue => setValue !== '');
+    
+                setValue.forEach(item => {
+                    if (!values.includes(item)) {
+                        if (this.max >= values.length + data.length) {
+                            this.handleDataItem(item);
+                        } else {
+                            console.log(`최대 ${this.max}개 까지 추가할 수 있습니다.`);
+                        }
+                    } else {
+                        console.log(`${item}는 이미 입력되어있습니다.`);
+                    }
+                });
+
+                if(multiInput.value.length > 0 && multiInput.value !== null){
+                    console.log(multiInput.value);
+                    if (!values.includes(multiInput.value)) {
+                        if (this.max > values.length) {
+                            this.handleDataItem(multiInput.value);
+                        } else {
+                            console.log(`최대 ${this.max}개 까지 추가할 수 있습니다.`);
+                        }
+                    } else {
+                        console.log(`${multiInput.value}는 이미 입력되어있습니다.`);
+                    }
+                }
+
+            } else if (typeof data === 'string') {
+                if (values[0] !== data) {
+                    if (this.max > values.length) {
+                        this.handleDataItem(data);
+                    } else {
+                        console.log(`최대 ${this.max}개 까지 추가할 수 있습니다.`);
+                    }
+                } else {
+                    console.log(`${data}는 이미 입력되어있습니다.`);
+                }
+            }
+            resetBtn.classList.remove('hide');
+            multiInput.nextElementSibling.classList.remove('blind');
+            multiInput.nextElementSibling.style.paddingRight = `${resetBtn.getBoundingClientRect().width + 16}px`;
+        } else {
+            console.log('disabled 상태에서는 추가할 수 없습니다.');
+        }
+    }
+
+    createChip(title) {
+        const chip = document.createElement('span');
+        const itemName = document.createElement('span');
+        const chipBtn = document.createElement('button');
+    
+        chip.setAttribute('class', 'chip');
+        itemName.textContent = title;
+    
+        chipBtn.setAttribute('type', 'button');
+        chip.appendChild(itemName);
+        chip.appendChild(chipBtn);
+    
+        return chip;
+    }
+
+    handleDataItem(dataItem) {
+        const multiInput = document.querySelector(`#${this.id}`);
+        const chip = this.createChip(dataItem);
+        multiInput.nextElementSibling.appendChild(chip);
+    }
+    
+    /**
+     * 다중검색목록에서 칩을 삭제합니다.
+     * @param {string|string[]} data - 제거할 데이터입니다.
+     */
+    remove(data) {
+        const multiInput = document.querySelector(`#${this.id}`);
+        const resetBtn = multiInput.parentElement.querySelector('.multiInput-reset');
+        const revoveChip = Array.isArray(data) ? data : [data];
+
+        if (!multiInput.getAttribute('disabled')) {
+            revoveChip.forEach(el => {
+                const chip = multiInput.nextElementSibling.querySelectorAll(`.chip`);
+                
+                chip.forEach(elt => {
+                    if (elt.innerText === el) {
+                        elt.remove();
+                    }
+                })
+            });
+        } else {
+            console.log('disabled 상태에서는 삭제할 수 없습니다.');
+        }
+
+        if (multiInput.nextElementSibling.children.length === 0) {
+            resetBtn.classList.add('hide');
+            multiInput.nextElementSibling.classList.add('blind');
+        }
+    }
+
+    /**
+     * 다중검색목록의 현재 데이터를 반환.
+     * @returns {string[]} - 다중검색목록의 데이터 배열
+     */
+    getData() {
+        const multiInput = document.querySelector(`#${this.id}`);
+        const data = [];
+    
+        // multiInput.value를 줄바꿈으로 분할 및 중복 제거, 빈 문자열 제거
+        const values = multiInput.value.split('\n').filter(value => value.trim() !== '');
+        const uniqueValues = [...new Set(values)];
+    
+        const existingChips = Array.from(multiInput.nextElementSibling.querySelectorAll('.chip')).map(el => el.innerText);
+    
+        // 기존 chip 데이터를 data 배열에 추가
+        existingChips.forEach(chipText => {
+            if (!data.includes(chipText)) {
+                data.push(chipText);
+            }
+        });
+    
+        // 분할된 값들을 처리하고 data 배열에 추가
+        uniqueValues.forEach(value => {
+            if (!data.includes(value)) {
+                this.handleDataItem(value);
+                data.push(value);
+            }
+        });
+    
+        // UI 업데이트
+        if (data.length > 0) {
+            multiInput.value = '';
+
+            let resetBtn = multiInput.nextElementSibling.nextElementSibling;
+            resetBtn.classList.remove('hide');
+            multiInput.nextElementSibling.classList.remove('blind');
+            multiInput.nextElementSibling.style.paddingRight = `${resetBtn.getBoundingClientRect().width + 16}px`;
+        }
+    
+        // 데이터 출력 및 반환
+        if (data.length === 0) {
+            console.log(`${this.id}의 데이터가 없습니다.`, null);
+            return null;
+        } else {
+            console.log(`${this.id}의 데이터`, data);
+            return data;
+        }
+    }
+
+    /**
+     * 다중검색목록 초기화
+     */
+    reset() {
+        const multiInput = document.querySelector(`#${this.id}`);
+
+        if (!multiInput.getAttribute('disabled')) {
+            multiInput.nextElementSibling.querySelectorAll('.chip').forEach(el => {
+                el.remove();
+            });
+            multiInput.nextElementSibling.classList.add('blind');
+            multiInput.parentElement.querySelector('.multiInput-reset').classList.add('hide');
+        } else {
+            console.log('disabled 상태에서는 초기화할 수 없습니다.');
+        }
+    }
+
+    /**
+     * 다중검색목록 비활성화
+     */
+    disable() {
+        const multiInput = document.querySelector(`#${this.id}`);
+
+        multiInput.setAttribute('disabled', true);
+        multiInput.nextElementSibling.classList.add('disabled');
+        multiInput.parentElement.querySelector('.multiInput-reset').classList.add('hide');
+    }
+
+    /**
+     * 다중검색목록 활성화
+     */
+    enable() {
+        const multiInput = document.querySelector(`#${this.id}`);
+        const values = Array.from(multiInput.nextElementSibling.querySelectorAll('.chip')).map(el => el.innerText);
+
+        multiInput.removeAttribute('disabled');
+        multiInput.nextElementSibling.classList.remove('disabled');
+        if (values.length !== 0) {
+            multiInput.parentElement.querySelector('.multiInput-reset').classList.remove('hide');
+        }
+    }
+}

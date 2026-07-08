@@ -1,0 +1,15 @@
+[14540:24440:0708/134745.599:INFO:components\enterprise\browser\controller\chrome_browser_cloud_management_controller.cc:239] No machine level policy manager exists.
+[4376:22420:0708/134745.798:INFO:third_party\webrtc\rtc_base\cpu_info.cc:77] Available number of cores: 8
+[6576:5968:0708/134745.883:INFO:third_party\webrtc\rtc_base\cpu_info.cc:77] Available number of cores: 8
+[8620:8912:0708/134746.076:VERBOSE1:components\viz\service\main\viz_main_impl.cc:87] VizNullHypothesis is disabled (not a warning)
+[19384:20176:0708/134746.199:INFO:third_party\webrtc\rtc_base\cpu_info.cc:77] Available number of cores: 8
+[29024:19780:0708/134746.349:INFO:third_party\webrtc\rtc_base\cpu_info.cc:77] Available number of cores: 8
+[12900:7884:0708/134746.552:INFO:third_party\webrtc\rtc_base\cpu_info.cc:77] Available number of cores: 8
+[14540:24440:0708/134747.425:INFO:CONSOLE:0] "[DOM] Input elements should have autocomplete attributes (suggested: "current-password"): (More info: https://goo.gl/9p2vKq) %o", source: https://www.ai-studio.co.kr/login (0)
+[14540:18884:0708/134750.431:ERROR:google_apis\gcm\engine\registration_request.cc:291] Registration response error message: DEPRECATED_ENDPOINT
+[14540:18884:0708/134817.735:ERROR:google_apis\gcm\engine\registration_request.cc:291] Registration response error message: DEPRECATED_ENDPOINT
+[14540:18884:0708/134901.514:ERROR:google_apis\gcm\engine\registration_request.cc:291] Registration response error message: DEPRECATED_ENDPOINT
+[436:29304:0708/134946.174:VERBOSE1:components\viz\service\main\viz_main_impl.cc:87] VizNullHypothesis is disabled (not a warning)
+[14540:18884:0708/135022.084:ERROR:google_apis\gcm\engine\registration_request.cc:291] Registration response error message: DEPRECATED_ENDPOINT
+[22756:14852:0708/135047.928:WARNING:net\extras\sqlite\sqlite_persistent_store_backend_base.cc:179] Failed to post task from FlushAndNotifyInBackground@net\extras\sqlite\sqlite_persistent_store_backend_base.cc:229 to client_task_runner_.
+[22756:14852:0708/135047.928:WARNING:net\extras\sqlite\sqlite_persistent_store_backend_base.cc:179] Failed to post task from FlushAndNotifyInBackground@net\extras\sqlite\sqlite_persistent_store_backend_base.cc:229 to client_task_runner_.

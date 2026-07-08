@@ -1,0 +1,1459 @@
+/**
+ * ## AISTUDIOCHART
+ * @version 2.0
+ * @todo - 소스정리 및 기능추가
+ */
+
+class AistudioChartV2 {
+    /**
+     * CONSTRUCTOR
+     * 차트의 초기 설정을 수행
+     *
+     * @param {string} chartId - 차트를 그릴 HTML 요소의 ID. 필수 항목입니다.
+     */
+    constructor(chartId) {
+        this.chartId = chartId;
+        this.data = []; // 데이터를 저장하기 위한 프로퍼티
+        this.options = {}; // 옵션을 저장하기 위한 프로퍼티
+
+        if (AistudioChartV2.isEmpty(this.chartId)) {
+            console.error('[AistudioChartV2] chartId는 필수항목입니다.');
+        }        
+
+        this.draw = function(data, options) {
+            this.data = data; // 들어오는 데이터로 내부 데이터 업데이트
+            this.options = options; // 들어오는 옵션으로 내부 옵션 업데이트
+
+            am5.addLicense("AM5C410805834");
+
+            if (this.validateAndPrepareOptions(options)) {
+                this.renderChart(data, options);
+            }
+        }
+    }
+
+    /**
+     * ISEMPTY
+     * 제공된 값이 비어 있는지 확인
+     *
+     * @param {any} value - 확인할 값.
+     * @returns {boolean} 값이 비어 있으면 true, 그렇지 않으면 false를 반환
+     */
+    static isEmpty(value) {
+        return value == null || (typeof value === 'string' && value.trim() === '');
+    }
+
+    /**
+     * VALIDATE AND PREPARE OPTIONS
+     * - 차트 옵션 객체와 데이터를 검증하고 준비
+     *
+     * @param {Object} data - 차트에 표시될 데이터
+     * @param {Object} options - 사용자 지정 차트 옵션
+     * @returns {boolean} 필수 옵션들이 유효하면 true, 그렇지 않으면 false를 반환
+     */
+    validateAndPrepareOptions(options) {
+        if (!this.validateRequiredOptions(options)) {
+            return false;
+        }
+        
+        // 차트 유형에 따른 추가적인 검증
+        if (!this.validateChartSpecificOptions(options)) {
+            return false;
+        }
+
+        // 추가 옵션 타입 및 제약 조건 검증
+        return this.validateAdditionalOptions(options);
+    }
+
+    /**
+     * VALIDATE REQUIRED OPTIONS
+     * - 제공된 옵션 객체 내에 필수 옵션들이 존재하는지 검증 
+     * - 'requiredOptions' 배열에 나열된 각 필수 옵션의
+     *   존재 여부를 확인하고, 필요한 옵션이 누락된 경우 적절한 에러 메시지를 출력하며, 검증이 실패할 경우 false를 반환
+     *
+     * @param {Object} options - 사용자 지정 차트 옵션 객체
+     * @returns {boolean} 모든 필수 옵션이 존재하면 true를 반환하고, 하나라도 누락된 경우 false를 반환
+     */
+    validateRequiredOptions(options) {
+        const requiredOptions = ['chart.type'];
+        for (const option of requiredOptions) {
+            if (!this.isValidOptionPath(options, option)) {
+                console.error(`[${this.chartId}] 필수 옵션 누락: ${option}`);
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /**
+     * VALIDATE CHART SPECIFIC OPTIONS
+     * - 차트의 유형에 따라 차트 옵션을 검증
+     * - 각 차트 유형에 특정한 로직을 적용하여,
+     *   옵션의 유효성을 검사하고, 옵션 설정이 요구사항을 충족하지 않을 때 오류를 출력
+     * - legend와 tooltip 관련 설정에 대한 검증도 수행
+     *
+     * @param {Object} options - 사용자 지정 차트 옵션 객체
+     * @returns {boolean} 모든 옵션이 유효하면 true를 반환하고, 하나라도 유효하지 않은 옵션이 있으면 false를 반환
+     */
+    validateChartSpecificOptions(options) {
+        // options 객체 내부에 option이 존재하는지 확인하고 접근
+        let chartOpts = options.option || {};
+
+        // 차트 유형에 따른 추가적인 검증 및 기본 옵션 설정
+        switch (options.chart.type) {
+            case "pie":
+                // clickEvent 설정 검증
+                if (chartOpts.clickEvent?.enabled === false && typeof chartOpts.clickEvent === 'object') {
+                    // clickEvent 내의 함수가 존재하는지 확인
+                    const hasFunction = Object.values(chartOpts.clickEvent).some(func => typeof func === 'function');
+                    if (hasFunction) {
+                        console.error(`[${this.chartId}] 'clickEvent.enabled'가 false로 설정된 경우, clickEvent 함수를 사용할 수 없습니다.`);
+                        return false;
+                    }
+                }
+                break;
+
+            case "category":
+            case "date":
+                if (options.chart.type === "date" && !options.chart.timeUnit) {
+                    console.error(`[${this.chartId}] 'chart.type'이 "date"일 때 'chart.timeUnit'은 필수입니다.`);
+                    return false;
+                }
+                const hasXSeries = this.isValidOptionPath(options, 'axis.x.series');
+                const hasYSeries = this.isValidOptionPath(options, 'axis.y.series');
+                if (hasXSeries && hasYSeries) {
+                    console.error(`[${this.chartId}] 'axis.x.series'와 'axis.y.series' 둘 중 하나만 설정할 수 있습니다.`);
+                    return false;
+                } else if (!hasXSeries && !hasYSeries) {
+                    console.error(`[${this.chartId}] 'chart.type'이 "category" 또는 "date"일 때, 'axis.x.series' 또는 'axis.y.series' 중 하나는 필수입니다.`);
+                    return false;
+                }
+                if (hasXSeries && !this.validateSeriesOptions(options.axis.x)) {
+                    return false;
+                } else if (hasYSeries && !this.validateSeriesOptions(options.axis.y)) {
+                    return false;
+                }
+                break;
+
+            default:
+                console.error(`[${this.chartId}] 'chart.type' 값이 유효하지 않습니다.`);
+                return false;
+        }
+
+        if (chartOpts.legend?.enabled === false && (chartOpts.legend?.maxColumns || chartOpts.legend?.position)) {
+            console.error(`[${this.chartId}] legend.enabled: false인 경우 'legend.position', 'legend.maxColumns' 옵션을 사용할 수 없습니다.`);
+            return false;
+        }
+
+        if (chartOpts.legend?.position === "right" && chartOpts.legend?.maxColumns) {
+            console.error(`[${this.chartId}] legend.position: "right"인 경우 'legend.maxColumns' 옵션을 사용할 수 없습니다.`);
+            return false;
+        }
+
+        if (chartOpts.tooltip?.enabled === false && (chartOpts.tooltip?.text || chartOpts.tooltip?.showAllTooltips)) {
+            console.error(`[${this.chartId}] 'tooltip.enabled: false인 경우 'tooltip.text', 'tooltip.showAllTooltips' 옵션을 사용할 수 없습니다.`);
+            return false;
+        }
+
+        return true;
+    }
+
+    /**
+     * VALIDATE SERIES OPTIONS
+     * - 시리즈 옵션 검증
+     * 
+     * @param {Object} axisOptions - 축 옵션 객체
+     * @returns {boolean} 옵션이 올바르면 true, 그렇지 않으면 false를 반환
+     */
+    validateSeriesOptions(axisOptions) {
+        if (!axisOptions.series) {
+            console.error(`[${this.chartId}] 'series' 옵션이 누락되었습니다.`);
+            return false;
+        }
+
+        const validTypes = ['column', 'bar', 'line', 'dashed'];
+        for (const key in axisOptions.series) {
+            if (!validTypes.includes(axisOptions.series[key])) {
+                console.error(`[${this.chartId}] '${key}'의 시리즈 유형 '${axisOptions.series[key]}'이(가) 유효하지 않습니다. 허용된 유형: ${validTypes.join(', ')}`);
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /**
+     * VALIDATE ADDITIONAL OPTIONS
+     * - 제공된 옵션 객체에서 각 옵션의 타입을 사전에 정의된 타입 정보와 비교하여 유효성을 검증
+     * - 'optionTypes' 객체 내에 정의된 각 옵션의 경로와 예상 타입을 이용해, 실제 옵션 값의 타입이 일치하는지 확인
+     *
+     * @param {Object} options - 사용자 지정 차트 옵션 객체
+     * @returns {boolean} 모든 옵션의 타입이 유효하면 true, 그렇지 않으면 false를 반환
+     */
+    validateAdditionalOptions(options) {
+        const optionTypes = {
+            'axis.x.axisLabel.rotation' : 'number',
+            'axis.x.customAxisLabel.text' : 'string',
+            'axis.x.customAxisLabel.fontSize' : 'number',
+            'axis.x.customAxisLabel.position' : 'string',
+            'axis.x.customAxisLabel.fill' : 'string',
+            'axis.y.axisLabel.rotation' : 'number',
+            'axis.y.customAxisLabel.text' : 'string',
+            'axis.y.customAxisLabel.fontSize' : 'number',
+            'axis.y.customAxisLabel.position' : 'string',
+            'axis.y.customAxisLabel.fill' : 'string',
+            'axis.title.text' : 'string',
+            'axis.title.fontSize' : 'number',
+            'axis.title.fill' : 'string',
+            'axis.title.position' : 'string',
+            'axis.minGridDistance' : 'number',
+            'axis.maxDeviation' : 'number',
+            'option.language' : 'string',
+            'option.stacked' : 'boolean',
+            'option.label.fill' : 'string',
+            'option.label.fontSize' : 'number',
+            'option.seriesValues.enabled' : 'boolean',
+            'option.seriesValues.fill' : 'string',
+            'option.legend.enabled' : 'boolean',
+            'option.legend.position' : 'string',
+            'option.legend.maxColumns' : 'number',
+            'option.tooltip.enabled' : 'boolean',
+            'option.tooltip.text' : 'string',
+            'option.tooltip.showAllTooltips' : 'boolean',
+            'option.bullets.shape' : 'string',
+            'option.bullets.circleSize' : 'number',
+            'option.bullets.rectangleSize' : 'number',
+            'option.lineYVisible' : 'boolean',
+            'option.lineXVisible' : 'boolean',
+            'option.clickEvent.enabled' : 'boolean',
+            'option.sliceGap.enabled' : 'boolean',
+            'option.sliceGap.fill' : 'string',
+            'option.sliceGap.strokeWidth' : 'number',
+            'option.customLabel.text' : 'string',
+            'option.customLabel.fill' : 'string',
+            'option.innerRadius' : 'number',
+            'option.valueFormat' : 'string',
+            'option.ticks' : 'boolean',
+            'option.halfMode' : 'boolean',
+        };
+
+        for (const [path, expectedType] of Object.entries(optionTypes)) {
+            if (!this.validateOptionType(options, path, expectedType)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /**
+     * IS VALID OPTION PATH
+     * - 주어진 옵션 객체에서 특정 경로를 따라 값이 존재하는지 확인
+     * - 경로는 '.'으로 구분된 문자열로 제공되며, 해당 경로에 값이 존재하면 true, 그렇지 않으면 false를 반환
+     *
+     * @param {Object} options - 검증할 옵션 객체
+     * @param {string} path - 검증할 옵션의 경로
+     * @returns {boolean} 경로에 값이 존재하면 true, 그렇지 않으면 false를 반환
+     */
+    isValidOptionPath(options, path) {
+        return path.split('.').reduce((acc, cur) => acc && acc[cur], options) !== undefined;
+    }
+
+    /**
+     * VALIDATE OPTION TYPE
+     * - 옵션 객체 내의 특정 경로에 위치한 값의 유형을 검증
+     * - 제공된 경로를 따라 객체 내부를 탐색하고, 최종 키의 값이 예상 유형과 일치하는지 확인
+     *
+     * @param {Object} options - 검증할 옵션 객체
+     * @param {string} path - 옵션 객체 내에서 값을 찾기 위한 경로
+     * @param {string} expectedType - 예상되는 값의 유형
+     * @returns {boolean} 유형이 일치하면 true, 일치하지 않으면 false를 반환
+     */
+    validateOptionType(options, path, expectedType) {
+        const keys = path.split('.');
+        let current = options;
+        for (const key of keys.slice(0, -1)) {
+            if (current[key] === undefined) return true; // 경로 중간에 해당 옵션이 없으면 종료
+            current = current[key];
+        }
+        const lastKey = keys[keys.length - 1];
+        if (current[lastKey] !== undefined && typeof current[lastKey] !== expectedType) {
+            console.error(`[${this.chartId}] '${path}'의 유형이 일치하지 않습니다. 제공되는 유형: ${expectedType}, 현재 유형: ${typeof current[lastKey]}.`);
+            return false;
+        }
+        return true;
+    }
+
+    /**
+     * CREATE ROOT
+     * - 차트의 루트 객체를 생성하고, 기본 설정을 적용
+     *
+     * @param {Object} options - 차트 설정 옵션
+     * @returns {am5.Root} 생성된 루트 객체
+     */
+    createRoot(options) {
+        this.disposeExistingCharts();
+        
+        const root = am5.Root.new(this.chartId);
+        const theme = am5.Theme.new(root);
+
+        this.applyThemeSettings(root, theme, options);
+        this.configureChartOptions(root, options);
+    
+        return root;
+    }
+
+    /**
+     * DISPOSE EXISTING CHARTS
+     * - 동일한 차트 ID를 가진 기존의 차트 인스턴스를 제거
+     */
+    disposeExistingCharts() {
+        am5.array.each(am5.registry.rootElements, () => {
+            for (let rootData of am5.registry.rootElements) {
+                if (rootData.dom.id === this.chartId) {
+                    rootData.dispose();
+                }
+            }
+        });
+    }
+
+    /**
+     * APPLY THEME SETTINGS
+     * - 차트에 테마 설정을 적용
+     *
+     * @param {am5.Root} root - 차트의 루트 객체
+     * @param {am5.Theme} theme - 적용할 테마 객체
+     * @param {Object} options - 차트 설정 옵션
+     */
+    applyThemeSettings(root, theme, options) {
+        const animatedTheme = am5themes_Animated.new(root);
+        root.setThemes([animatedTheme, theme]);
+    
+        this.applyLabelSettings(theme, options);
+        this.applyColorSettings(theme, options);
+    }
+
+    /**
+     * APPLY LABEL SETTINGS
+     * - 차트의 라벨 설정을 적용
+     *
+     * @param {am5.Theme} theme - 차트의 테마 객체
+     * @param {Object} options - 라벨 설정 옵션
+     */
+    applyLabelSettings(theme, options) {
+        const labelOptions = options.option?.label || {};
+        const labelRule = theme.rule("Label");
+        labelRule.setAll({
+            fill: am5.color(labelOptions.fill || '#191919'),
+            fontSize: labelOptions.fontSize ? `${labelOptions.fontSize}px` : '14px'
+        });
+    }
+
+    /**
+     * APPLY COLOR SETTINGS
+     * - 차트에 색상 설정을 적용
+     *
+     * @param {am5.Theme} theme - 차트의 테마 객체
+     * @param {Object} options - 색상 설정 옵션
+     */
+    applyColorSettings(theme, options) {
+        if (options.option?.colors) {
+            const colorArray = options.option.colors.map(color => am5.color(color));
+            theme.rule("ColorSet").set("colors", colorArray);
+        }
+    }
+    
+    /**
+     * CONFIGURE CHART OPTIONS
+     * - 차트의 추가적인 설정을 구성
+     *
+     * @param {am5.Root} root - 차트의 루트 객체
+     * @param {Object} options - 추가 설정 옵션
+     */
+    configureChartOptions(root, options) {
+        if (options.option?.customOption?.bytePrefixes) {
+            root.numberFormatter.setAll({
+                numberFormat: "#.0b",
+                smallNumberThreshold: 0.001,
+                bytePrefixes: [
+                    { "number": 1024, "suffix": "KB" },
+                    { "number": 1048576, "suffix": "MB" },
+                    { "number": 1073741824, "suffix": "GB" }
+                ]
+            });
+        }
+    }
+
+    /**
+     * CONVERT DATA
+     * - 날짜 데이터를 변환 
+     * - 문자열 형태의 날짜를 Date 객체로 변환하여 반환
+     * 
+     * @param {Array} data - 변환할 데이터 배열
+     * @returns {Array} 변환된 데이터 배열
+     */
+    convertData(data) {
+        return data.map(item => ({
+            ...item,
+            date: new Date(item.date.substring(0, 4), item.date.substring(4, 6) - 1, item.date.substring(6)).getTime()
+        }));
+    }
+
+    /**
+     * RENDER CHART
+     * - 제공된 옵션에 따라 적절한 유형의 차트를 렌더링
+     * 
+     * @param {Array} data - 차트에 표시될 데이터
+     * @param {Object} options - 차트 생성 및 구성 옵션을 포함하는 객체
+     */
+    renderChart(data, options) {
+        switch (options.chart?.type) {
+            case 'date':
+                const convertedData = this.convertData(data);
+                // 변환된 데이터를 이용해 렌더링
+                this.renderDateChart(convertedData, options);
+                break;
+            case 'category':
+                this.renderCategoryChart(data, options);
+                break;
+            case 'pie':
+                this.renderPieChart(data, options);
+                break;
+        }
+    }
+
+    /**
+     * RE-RENDER CHART
+     * - 차트 ID에 해당하는 기존 차트 인스턴스를 제거하고 새 데이터 및 옵션으로 차트를 재생성합니다.
+     *
+     * @param {Array} data - 새로운 차트 데이터
+     * @param {Object} options - 새로운 차트 옵션
+     * @param {String} chartId - 재렌더링할 차트의 ID
+     */
+    reRender(data, options, chartId) {
+        this.chartId = chartId; // 클래스 인스턴스의 chartId를 업데이트
+        this.disposeExistingCharts(); // 기존 차트 인스턴스 제거
+        
+        if (this.validateAndPrepareOptions(options)) {
+            this.renderChart(data, options);
+        }
+    }
+
+    /**
+     * CREATE CHART
+     * - 차트 유형에 따라 적절한 차트 객체를 생성
+     *
+     * @param {am5.Root} root - 차트의 루트 객체
+     * @param {Object} options - 차트 생성 옵션
+     * @returns {am5.Chart} 생성된 차트 객체
+     */
+    createChart(root, options) {
+        switch (options.chart.type) {
+            case "pie":
+                return this.createPercentChart(root, options);
+            default:
+                return this.createXYChart(root, options);
+        }
+    }
+    
+    /**
+     * CREATE XY CHART
+     * - XY형 차트를 생성하고, 특정 옵션(팬, 줌, 레이아웃)을 설정
+     * 
+     * @param {am5.Root} root - amCharts 루트 객체
+     * @param {Object} options - 차트 생성 옵션
+     * @returns {am5xy.XYChart} 생성된 XY 차트 객체
+     */
+    createXYChart(root, options) {
+        const layout = options.option?.legend?.position === "right" ? root.horizontalLayout : root.verticalLayout;
+        const chartOptions = {
+            panX: false,
+            panY: false,
+            wheelX: options.axis.x?.series ? "panY" : "panX",
+            wheelY: options.axis.x?.series ? "zoomY" : "zoomX",
+            paddingLeft: 10,
+            layout: layout,
+            maxTooltipDistance: options.option?.tooltip?.showAllTooltips === true ? undefined : 0
+        };
+    
+        const xyChart = am5xy.XYChart.new(root, chartOptions);
+        root.container.children.push(xyChart);
+    
+        this.configureXYCursor(xyChart, options);
+        xyChart.zoomOutButton.set("forceHidden", true);
+    
+        return xyChart;
+    }
+    
+    /**
+     * CONFIGURE XY CURSOR
+     * - XY 차트의 커서 설정을 구성
+     * - 커서의 X, Y 축 가시성을 옵션에 따라 조정
+     * 
+     * @param {am5xy.XYChart} chart - 커서를 설정할 XY 차트 객체
+     * @param {Object} options - 커서 및 차트 옵션을 포함하는 객체
+     */
+    configureXYCursor(chart, options) {
+        const cursor = chart.set("cursor", am5xy.XYCursor.new(chart.root, { behavior: "none" }));
+        cursor.lineY.set("visible", !!options.option?.lineYVisible);
+        cursor.lineX.set("visible", !!options.option?.lineXVisible);
+    }    
+
+    /**
+     * CREATE XY SERIES
+     * - XY 시리즈를 차트에 추가하고 구성하며 차트와 시리즈 유형에 따라 특정 설정을 적용
+     * - options에 따라 차트의 유형('date' 또는 'category')을 확인하고, 해당하는 설정 함수를 호출
+     * - seriesType에 따라 적절한 시리즈(ColumnSeries 또는 LineSeries)를 생성하고, 추가 설정을 적용
+     * - 'column' 시리즈의 경우, 기본 컬럼 옵션과 툴팁 설정을 적용
+     * - 'line' 또는 'dashed' 시리즈의 경우, 선 스타일을 설정하고 필요한 경우 bullets을 추가
+     * - 모든 시리즈에 데이터를 할당하고, 시리즈의 애니메이션 등장 효과를 설정
+     * 
+     * @param {Object} params - 메서드에 전달된 매개변수 객체
+     * @param {am5.Chart} params.chart - 시리즈를 추가할 차트 객체
+     * @param {am5.Root} params.root - amCharts 루트 객체.
+     * @param {Array} params.data - 차트에 표시될 데이터
+     * @param {Object} params.options - 사용자가 지정한 차트 옵션
+     * @param {String} params.seriesType - 추가할 시리즈의 유형 ('column', 'line', 'dashed').
+     * @param {Object} params.seriesOptions - 시리즈 구성에 사용될 옵션
+     */
+    createXYSeries ({ chart, root, data, options, seriesType, seriesOptions }) {
+        const { xAxis, yAxis, valueName, tooltipFormat } = seriesOptions;
+        let tooltip;
+
+        let xyOptions = {
+            name: valueName,
+            xAxis: xAxis,
+            yAxis: yAxis,
+            ...options.option?.stacked ? { stacked: true } : {},
+        };
+        
+        if (options.chart.type === "date") {
+            this.setXyOptionsForDateChart(xyOptions, options, valueName, root, tooltipFormat);
+        } else {
+            this.setXyOptionsForCategoryChart(xyOptions, options, valueName, root);
+        }
+    
+        // 시리즈 객체 생성
+        let series;
+        switch (seriesType) {
+            case "column":
+            series = chart.series.push(am5xy.ColumnSeries.new(root, xyOptions));
+
+            // 기본 컬럼 옵션 설정
+            let columnsOptions = {
+                fillOpacity: 0.8,
+                strokeOpacity: 0,
+                width: am5.percent(80),
+                tooltipY: am5.percent(0)
+            };
+        
+            // Tooltip 텍스트 설정
+            let tooltipTextTemplate = options.chart.type === "date" ?
+                `[bold fontSize: 14px]{valueX.formatDate("${tooltipFormat}")}[/][fontSize: 14px]\n{valueYField} : {valueY}[/]` :
+                `[bold fontSize: 14px]{category}[/]\n[fontSize: 14px]{valueYField} : {valueY}[/]`;
+
+            if (options.axis.x?.series) {
+                columnsOptions.tooltipY = am5.percent(80);
+
+                tooltipTextTemplate = options.chart.type === "date" ? 
+                `[bold fontSize: 14px]{valueY.formatDate("${tooltipFormat}")}[/][fontSize: 14px]\n{valueXField} : {valueX}[/]` :
+                `[bold fontSize: 14px]{category}[/]\n[fontSize: 14px]{valueXField} : {valueX}[/]`;
+            }
+        
+            if (options.option?.tooltip?.enabled !== false) {
+                // 최종 tooltipText 설정
+                columnsOptions.tooltipText = options.option?.tooltip?.text ? options.option?.tooltip?.text : tooltipTextTemplate;
+            }
+
+            // 컬럼 옵션 적용
+            series.columns.template.setAll(columnsOptions);
+        
+            // Stacked 차트에 대한 bullets 설정
+            if (options.option?.seriesValues?.enabled === true) {
+                series.bullets.push(function () {
+                    return am5.Bullet.new(root, {
+                        sprite: am5.Label.new(root, {
+                            text: options.axis.x?.series ? "{valueX}" : "{valueY}",
+                            fill: options.option.seriesValues.fill ? options.option.seriesValues.fill : root.interfaceColors.get("background"),
+                            centerY: am5.p50,
+                            centerX: am5.p50,
+                            populateText: true
+                        })
+                    });
+                });
+            }
+            break;
+
+            case "line":
+            default:
+            series = chart.series.push(am5xy.LineSeries.new(root, xyOptions));
+            series.strokes.template.setAll({ strokeWidth: 2 });
+
+            if (options.option?.bullets) {
+                const bullet = AistudioChartV2.prototype.bullets(root, series, options);
+            }
+
+            if (seriesType === "dashed") {
+                series.strokes.template.setAll({ strokeDasharray: [5, 2] });
+            }
+            break;
+        }
+
+        series.data.setAll(data);
+
+        series.appear(1000);
+
+        return series;
+    }
+
+    /**
+     * SET XY OPTIONS FOR DATE CHART
+     * - 날짜 차트의 XY옵션 설정
+     * - X축을 'date' 필드로, Y축을 사용자가 지정한 값 필드로 설정
+     * - stacked 옵션(column 시리즈만 해당)이 활성화된 경우, 차트 내부 막대에 데이터 수를 표시
+     * 
+     * @param {Object} xyOptions - 설정할 XY 옵션 객체
+     * @param {Object} options - 사용자가 지정한 전체 옵션 객체
+     * @param {string} valueName - Y축에 사용될 값 필드의 이름
+     * @param {am5.Root} root - amCharts 루트 객체
+     * @param {string} tooltipFormat - 툴팁에 사용될 날짜 포맷 문자열
+     */
+    setXyOptionsForDateChart(xyOptions, options, valueName, root, tooltipFormat, yAxis) {
+        if (options.axis.x?.series) {
+            xyOptions.valueYField = "date";
+            xyOptions.valueXField = valueName;
+            xyOptions.baseAxis = yAxis;
+        } else {
+            xyOptions.valueXField = "date";
+            xyOptions.valueYField = valueName;
+        }
+
+        if (!options.option?.stacked && options.option?.tooltip?.enabled !== false) {
+            if (options.option?.tooltip?.text) {
+                xyOptions.tooltip = am5.Tooltip.new(root, {labelText: options.option.tooltip.text});
+            } else {
+                xyOptions.tooltip = am5.Tooltip.new(root, {
+                    labelText: options.axis.x?.series ? `[bold]{valueY.formatDate("${tooltipFormat}")}[/]\n{valueXField} : {valueX}`:
+                    `[bold]{valueX.formatDate("${tooltipFormat}")}[/]\n{valueYField} : {valueY}`,
+                });
+            }
+        }
+    }
+    
+    /**
+     * SET XY OPTIONS FOR CATEGORY CHART
+     * - 카테고리 차트의 XY옵션 설정
+     * - X축을 'category' 필드로 설정하고, Y축을 사용자가 지정한 값 필드로 설정
+     * - options.axis.x?.series가 지정된 경우, 카테고리 필드를 Y축 카테고리로, 사용자가 지정한 값 필드를 X축 값으로 사용
+     * (이 경우, xAxis와 yAxis의 역할이 바뀌며, 해당 설정을 바탕으로 차트가 그려집니다.)
+     * - stacked 옵션(column 시리즈만 해당)이 활성화된 경우, 차트 내부 막대에 데이터 수를 표시
+     * 
+     * @param {Object} xyOptions - 설정할 XY 옵션 객체
+     * @param {Object} options - 사용자가 지정한 전체 옵션 객체
+     * @param {string} valueName - Y축에 사용될 값 필드의 이름
+     * @param {am5.Root} root - amCharts 루트 객체
+     * @param {am5xy.Axis} yAxis - 카테고리 차트의 Y축 객체, XY 차트에서 X축으로 사용될 수 있음
+     */
+    setXyOptionsForCategoryChart(xyOptions, options, valueName, root, yAxis) {
+        if (options.axis.x?.series) {
+            xyOptions.categoryYField = "category";
+            xyOptions.valueXField = valueName;
+            xyOptions.baseAxis = yAxis;
+        } else {
+            xyOptions.categoryXField = "category";
+            xyOptions.valueYField = valueName;
+        }
+    
+        if (!options.option?.stacked && options.option?.tooltip?.enabled !== false) {
+            if (options.option?.tooltip?.text) {
+                xyOptions.tooltip = am5.Tooltip.new(root, {labelText: options.option.tooltip.text});
+            } else {
+                xyOptions.tooltip = am5.Tooltip.new(root, {
+                    labelText: options.axis.x?.series ? `[bold]{category}[/]\n{valueXField} : {valueX}` :
+                    `[bold]{category}[/]\n{valueYField} : {valueY}`,
+                });
+            }
+        }
+    }
+
+    /**
+     * CREATE PERCENT CHART
+     * - 파이 차트 형태의 퍼센트 차트를 생성 
+     * - 옵션에 따라 내부 반지름을 설정하여 도넛 형태로 표시할 수 있으며,
+     *   레전드의 위치가 'right'인 경우 차트의 레이아웃을 가로 방향으로 조정
+     * 
+     * @param {am5.Root} root - amCharts 루트 객체
+     * @param {Object} options - 차트 생성 옵션
+     * @returns {am5percent.PieChart} 생성된 파이 차트 객체
+     */
+    createPercentChart(root, options) {
+        const pieChartConfig = {
+            layout: root.verticalLayout,
+            innerRadius: options.option.innerRadius ? am5.percent(options.option.innerRadius) : undefined,
+        };
+
+        if (options.option.halfMode === true) {
+            pieChartConfig.startAngle = -180;
+            pieChartConfig.endAngle = 0;
+        }
+    
+        if (options.option.legend?.position === 'right') {
+            pieChartConfig.layout = root.horizontalLayout;
+        }
+    
+        const percentChart = am5percent.PieChart.new(root, pieChartConfig);
+        root.container.children.push(percentChart);
+    
+        return percentChart;
+    }
+
+    /**
+     * CREATE PERCENT SERIES
+     * - 퍼센트 기반 차트(예: 파이 차트)의 시리즈를 생성하고 구성
+     * - 사용자 정의 옵션을 반영하여 시리즈의 레이아웃, 라벨, 불릿 등을 설정
+     * 
+     * @param {Object} params - 시리즈 생성에 필요한 매개변수들을 담고 있는 객체
+     * @param {am5.Chart} params.chart - 시리즈가 추가될 차트 객체
+     * @param {am5.Root} params.root - amCharts의 root 인스턴스
+     * @param {Array} params.data - 차트에 표시될 데이터 배열
+     * @param {Object} params.options - 차트 및 시리즈 구성을 위한 사용자 지정 옵션 객체
+     * @param {Object} params.seriesOptions - 시리즈 타입과 관련된 추가 옵션
+     * @returns {am5.Series} 생성된 시리즈 객체
+     */
+    createPercentSeries({ chart, root, data, options, seriesOptions }) {
+        const { seriesType } = seriesOptions;
+
+        let percentOptions = {
+            name: "Series",
+            valueField: "value",
+            categoryField: "category",
+            tooltip: am5.Tooltip.new(root, {
+                labelText: options.option.valueFormat === "absolute" 
+                ? `[bold]{category}[/] : {value}` 
+                : `[bold]{category}[/] : {value} ({valuePercentTotal.formatNumber('0.00')}%)`
+            })
+        };
+
+        if (options.option?.tooltip?.text) {
+            percentOptions.tooltip = am5.Tooltip.new(root, {
+                labelText: options.option.tooltip.text 
+            })
+        }
+
+        if (options.option?.halfMode === true) {
+            percentOptions.startAngle = -180;
+            percentOptions.endAngle = 0;
+        }
+
+        let series;
+        switch (seriesType) {
+            case "pie":
+                series = chart.series.push(am5percent.PieSeries.new(root, {
+                    ...percentOptions,
+                }));
+
+                if (options.option?.sliceGap?.enabled === true) {
+                    series.slices.template.setAll({
+                        stroke: options.option?.sliceGap?.fill ? am5.color(`${options.option.sliceGap.fill}`) : am5.color('#ffffff'),
+                        strokeWidth: options.option?.sliceGap?.strokeWidth ? options.option.sliceGap.strokeWidth : 3
+                    });
+                }
+        
+                if (options.option?.valueFormat === "absolute") {
+                    series.labels.template.setAll({
+                        text: "{category}"
+                    });
+                }
+        
+                if (options.option?.seriesValues?.enabled === true) {
+                    series.bullets.push(function () {
+                        return am5.Bullet.new(root, {
+                            sprite: am5.Label.new(root, {
+                                text: options.option.valueFormat === "absolute" ? "{value}" : "{valuePercentTotal.formatNumber('0.00')}%",
+                                fill: options.option?.seriesValues?.fill ? options.option.seriesValues.fill : root.interfaceColors.get("alternativeText"),
+                                centerY: am5.p50,
+                                centerX: am5.p50,
+                                populateText: true
+                            })
+                        });
+                    });
+                }
+        
+                if (options.option?.ticks !== true) {
+                    series.labels.template.set("forceHidden", true);
+                    series.ticks.template.set("forceHidden", true);
+                }
+                series.ticks.template.setAll({
+                    stroke : options.option?.label?.fill ? am5.color(`${options.option?.label?.fill}`) : undefined
+                });
+
+
+                if (options.option?.tooltip?.enabled === false) {
+                    series.set("tooltip", am5.Tooltip.new(root, {
+                        forceHidden: true,
+                    }));
+                }
+
+                // click event
+                if (options.option?.clickEvent?.enabled !== false) {
+                    series.slices.template.events.on("click", (ev) => this.handlePieClick(ev, series, options));
+                } else {
+                    series.slices.template.events.off("click", (ev) => this.handlePieClick(ev, series, options));
+                    series.slices.template.set("toggleKey", "none");
+                }
+            break;
+            // PercentSeries가 더 늘어날 경우 추가
+        }
+        
+        series.data.setAll(data);
+
+        series.appear(1000, 100);
+    
+        return series;
+    }
+
+    /**
+     * HANDLE PIE CLICK
+     * - 파이 차트의 조각 클릭 이벤트를 처리 
+     * - 클릭된 조각 외의 모든 활성 조각을 비활성화하고, 필요에 따라 사용자 정의 클릭 이벤트 함수를 실행
+     * 
+     * @param {Object} ev - 발생한 클릭 이벤트
+     * @param {am5.PieSeries} series - 클릭 이벤트가 발생한 파이 시리즈 객체.
+     * @param {Object} options - 사용자 정의 옵션 객체, 클릭 이벤트 처리 방법을 결정
+     */
+    handlePieClick(ev, series, options) {
+        series.slices.each(function(slice) {
+            if (slice != ev.target && slice.get("active")) {
+                slice.set("active", false);
+            }
+        });
+        
+        const category = ev.target.dataItem.dataContext.category;
+        const value = ev.target.dataItem.dataContext.value;
+        const valuePercent = parseFloat(ev.target.dataItem._settings.valuePercentTotal).toFixed(2); // 소수점 두 자리까지 반올림
+
+        if (typeof options.option?.clickEvent === 'object') {
+            Object.values(options.option.clickEvent).forEach(func => {
+                if (typeof func === 'function') {
+                    func(category, value, valuePercent);
+                }
+            });
+        }
+    }
+
+    /**
+     * CREATE LEGEND
+     * - 차트에 레전드를 생성하고, 사용자 지정 옵션에 따라 레이아웃 및 위치를 설정
+     * 
+     * @param {Object} chart - 레전드가 추가될 차트 객체
+     * @param {Object} root - amCharts의 root 인스턴스
+     * @param {Object} options - 사용자 지정 옵션을 포함하는 객체
+     */
+    createLegend(chart, root, options, series = null) {
+        // 레전드 표시 여부 설정을 체크. 레전드를 표시하지 않는 경우 함수 종료
+        if (options.option?.legend?.enabled === false) return;
+
+        // legend 옵션을 체크하지 않고, 기본 또는 지정된 레전드 옵션을 사용
+        const legendOptions = options.option?.legend || {}; // legend 옵션이 없으면 빈 객체를 사용
+        // 공통 레이아웃 옵션 설정
+        const layout = am5.GridLayout.new(root, { maxColumns: legendOptions.maxColumns, });
+
+        const commonLegendOptions = {
+            layout,
+            centerX: am5.percent(50),
+            x: am5.percent(50),
+            paddingTop: options.option?.legend?.position === 'top' ? 0 : 14,
+            ...(options.option?.legend?.position === 'right' && { layout: root.verticalLayout, y: am5.percent(80), centerY: am5.percent(80), x: am5.percent(100), centerX: am5.percent(100), paddingLeft: 30 }),
+            ...(options.option?.clickEvent?.enabled === false && { clickTarget: "none" }) // 조건부로 clickTarget 추가
+        };
+
+        if (options.chart.type === "pie") {
+            commonLegendOptions.paddingTop = options.option.legend?.position === 'top' ? 14 : 0;
+            commonLegendOptions.paddingBottom = 14;
+        }
+    
+        // 레전드 위치에 따른 옵션 조정, legendOptions.position이 없는 경우 default로 commonLegendOptions 반환
+        const legendPositionOptions = this.getLegendPositionOptions(legendOptions.position || "default", commonLegendOptions, options.chart.type);
+    
+        // 레전드 생성 및 데이터 설정
+        let legendControl = this.createLegendForChart(chart, root, legendPositionOptions, options);
+
+        if (legendControl) {
+            legendControl.data.setAll(chart.series.values);
+
+            if (options.chart.type === "pie") {
+                legendControl.data.setAll(series.dataItems);
+
+                // 둥굴게 설정
+                legendControl.markerRectangles.template.setAll({
+                    cornerRadiusTL: 10,
+                    cornerRadiusTR: 10,
+                    cornerRadiusBL: 10,
+                    cornerRadiusBR: 10,
+                });
+
+                if (options.option?.valueFormat === "absolute") {
+                    legendControl.valueLabels.template.set("forceHidden", true);
+                }
+            }
+        }
+    }
+
+    /**
+     * CREATE LEGEND FOR CHART
+     * - 차트에 레전드를 생성하고, 지정된 옵션에 따라 차트에 추가
+     * 
+     * @param {Object} chart - 레전드가 추가될 차트 객체
+     * @param {Object} root - amCharts의 root 인스턴스
+     * @param {Object} options - 레전드 구성에 사용될 옵션 객체
+     * @param {Object} chartOptions - 차트 전체의 사용자 지정 옵션을 포함하는 객체
+     * @returns {am5.Legend} 생성된 레전드 객체
+     */
+    createLegendForChart(chart, root, legendOptions, chartOptions) {
+        let legendPosition = chartOptions.option?.legend?.position;
+    
+        const legend = am5.Legend.new(root, legendOptions);
+    
+        if (chartOptions.chart?.type === "pie") {
+            
+            if (['top'].includes(legendPosition)) {
+                chart.children.unshift(legend);
+            } else {
+                chart.children.push(legend);
+            }
+        } else {
+            if (['top-left', 'top-right'].includes(legendPosition)) {
+                chart.children.unshift(legend);
+            } else {
+                chart.children.push(legend);
+            }
+        }
+    
+        return legend;
+    }
+
+    /**
+     * GET LEGEND POSITION OPTIONS
+     * - 레전드의 위치 옵션을 처리하고, 위치에 따라 적절한 레이아웃 설정을 반환
+     * 
+     * @param {string} position - 레전드의 위치를 지정하는 문자열 ('top', 'top-left', 등).
+     * @param {Object} commonOptions - 모든 레전드 위치에 공통적으로 적용되는 기본 옵션
+     * @param {string} chartType - 차트의 유형 ('pie', 'category', 등)
+     * @returns {Object} 조정된 레전드 옵션 객체
+     */
+    getLegendPositionOptions(position, commonOptions, chartType) {
+        switch (position) {
+            case 'top':
+                if (chartType === "pie") {
+                    return { ...commonOptions, paddingBottom: 0 };
+                }
+                return { ...commonOptions, paddingBottom: 14};
+            case 'top-left':
+                if (chartType === "pie") {
+                    console.warn(`[${this.chartId}] legend.position: "top-left"는 파이 차트에서 사용할 수 없습니다. 기본값을 사용합니다.`);
+                    return { ...commonOptions, centerX: am5.percent(50), x: am5.percent(50) };
+                }
+                return { ...commonOptions, width: am5.percent(100), paddingLeft: 30, paddingBottom: 14, paddingTop: 0 };
+            case 'top-right':
+                if (chartType === "pie") {
+                    console.warn(`[${this.chartId}] legend.position: "top-right"는 파이 차트에서 사용할 수 없습니다.`);
+                    return { ...commonOptions, centerX: am5.percent(50), x: am5.percent(50) };
+                }
+                return { ...commonOptions, centerX: am5.percent(100), x: am5.percent(100), paddingBottom: 14, paddingTop: 0 };
+            case 'bottom-left':
+                if (chartType === "pie") {
+                    console.warn(`[${this.chartId}] legend.position: "bottom-left"는 파이 차트에서 사용할 수 없습니다.`);
+                    return { ...commonOptions, centerX: am5.percent(50), x: am5.percent(50) };
+                }
+                return { ...commonOptions, width: am5.percent(100), paddingLeft: 30 };
+            case 'bottom-right':
+                if (chartType === "pie") {
+                    console.warn(`[${this.chartId}] legend.position: "bottom-right"는 파이 차트에서 사용할 수 없습니다.`);
+                    return { ...commonOptions, centerX: am5.percent(50), x: am5.percent(50) };
+                }
+                return { ...commonOptions, centerX: am5.percent(100), x: am5.percent(100) };
+            case 'right':
+                if (chartType === "pie") {
+                    return { ...commonOptions, paddingRight: 14, paddingLeft: 0 };
+                }
+                return { ...commonOptions };
+            default: // "bottom"
+                return commonOptions;
+        }
+    }
+
+    /**
+     * SET AXIS LABEL
+     * - 축에 라벨을 설정 
+     * - 라벨의 텍스트, 폰트 크기, 위치 색상을 사용자 옵션에 따라 조정
+     * 
+     * @param {Object} root - amCharts 루트 객체
+     * @param {Object} axis - 라벨을 설정할 축 객체
+     * @param {Object} labelOptions - 라벨 설정 옵션
+     * @param {boolean} isYAxis - 설정 대상 축이 Y축인지의 여부
+     */
+    setAxisLabel(root, axis, labelOptions, isYAxis) {
+        if (labelOptions) {
+            let labelProperties = {
+                text: labelOptions.text,
+                fontSize: labelOptions.fontSize || 14,
+                centerX : am5.percent(50),
+                ...(labelOptions.fill && { fill: labelOptions.fill }) // 조건부로 fill 속성 추가
+            };
+    
+            if (isYAxis) {
+                labelProperties.rotation = -90;
+                labelProperties.x = am5.p0;
+                labelProperties.centerY = am5.p100;
+                labelProperties.y = am5.percent(50);
+                labelProperties.paddingBottom = 14;
+            } else {
+                labelProperties.x = am5.percent(50);
+            }
+    
+            // 위치 설정에 따른 조정
+            this.adjustLabelPosition(labelProperties, labelOptions.position, isYAxis);
+    
+            axis.children.push(am5.Label.new(root, labelProperties));
+        }
+    }
+
+    /**
+     * ADJUST LABEL POSITION
+     * - 축 라벨의 위치를 조정
+     * - 라벨의 위치(상단, 하단, 좌측, 우측)에 따라 X, Y 좌표 및 정렬을 조정
+     *
+     * @param {Object} labelProperties - 조정할 라벨 속성 객체
+     * @param {string} position - 라벨의 위치를 나타내는 문자열
+     * @param {boolean} isYAxis - 조정 대상 라벨이 Y축에 속하는지의 여부
+     */
+    adjustLabelPosition(labelProperties, position, isYAxis) {
+        if (isYAxis) {
+            if (position === "top") {
+                labelProperties.y = am5.percent(0);
+                labelProperties.centerX = am5.percent(100);
+            } else if (position === "bottom") {
+                labelProperties.y = am5.percent(100);
+                labelProperties.centerX = am5.percent(0);
+            }
+        } else {
+            if (position === "right") {
+                labelProperties.x = am5.percent(100);
+                labelProperties.centerX = am5.percent(100);
+            } else if (position === "left") {
+                labelProperties.x = am5.percent(0);
+                labelProperties.centerX = am5.percent(0);
+            }
+        }
+    }
+
+    /**
+     * SET AXIS TITLE
+     * - Y축에 제목을 설정
+     * - 제공된 옵션에 따라 텍스트, 폰트 크기, 굵기, 정렬 및 색상 설정 가능
+     * 
+     * @param {am5.Root} root - amCharts의 Root 인스턴스
+     * @param {am5xy.Axis} yAxis - 제목을 설정할 Y축 객체
+     * @param {Object} titleOptions - 제목의 구성 옵션을 포함하는 객체
+     */
+    setAxisTitle(root, yAxis, titleOptions) {
+        if (!titleOptions || !titleOptions.title) return;
+    
+        let labelProperties = {
+            text: titleOptions.title.text,
+            fontSize: titleOptions.title.fontSize || 20,
+            fontWeight: "600",
+            paddingBottom: 16,
+            ...(titleOptions.title.fill && { fill: titleOptions.title.fill }) // 조건부로 fill 속성 추가
+        };
+    
+        if (titleOptions.title.position === "center") {
+            labelProperties.width = am5.percent(100);
+            labelProperties.textAlign = "center";
+        }
+    
+        yAxis.axisHeader.children.push(am5.Label.new(root, labelProperties));
+    }
+
+    /**
+     * BULLETS
+     * - 시리즈에 bullet을 추가 (line, dashed만 해당)
+     * - 사용자가 지정한 옵션에 따라 bullet의 모양을 결정하고, 해당 모양의 bullet을 시리즈에 추가
+     *
+     * @param {Object} root - amCharts의 root 인스턴스
+     * @param {Object} series - bullet을 추가할 시리즈 객체
+     * @param {Object} options - bullet과 관련된 사용자 정의 옵션을 포함하는 객체
+     * @returns {am5.Bullet} 생성되어 시리즈에 추가된 bullet 인스턴스
+     */
+    bullets(root, series, options) {
+        let bullet = series.bullets.push(function() {
+            let shape = AistudioChartV2.prototype.bulletShape(root, series, options);
+
+            return am5.Bullet.new(root, {
+                sprite: shape
+            });
+        });
+        
+        return bullet;
+    }
+
+    /**
+     * BULLET SHAPE
+     * - 사용자가 지정한 옵션에 따라 총알의 모양을 생성 (현재 'circle'과 'rectangle' 모양을 지원합니다.)
+     * - 선택된 모양에 따라 amCharts 그래픽 객체를 생성하고 반환
+     *
+     * @param {Object} root - amCharts의 root 인스턴스
+     * @param {Object} series - bullet의 모양이 추가될 시리즈 객체
+     * @param {Object} options - bullet 모양과 관련된 사용자 정의 옵션을 포함하는 객체
+     * @returns {am5.Circle|am5.Rectangle} 생성된 bullet 모양의 amCharts 그래픽 객체
+     */
+    bulletShape(root, series, options) {
+        if (options.option?.bullets?.shape === 'circle') {
+            let circle = am5.Circle.new(root, {
+                radius: options.option?.bullets?.circleSize ? options.option.bullets.circleSize : 4,
+                fill: series.get("fill"),
+                stroke: root.interfaceColors.get("background"),
+                strokeWidth: options.option.bullets.strokeWidth
+            });
+
+            return circle;
+        } else if (options.option?.bullets?.shape === 'rectangle') {
+            let rectangle = am5.Rectangle.new(root, {
+                width: options.option?.bullets?.rectangleSize ? options.option.bullets.rectangleSize : 4,
+                height: options.option?.bullets?.rectangleSize ? options.option.bullets.rectangleSize : 4,
+                centerX:am5.p50,
+                centerY:am5.p50,
+                fill: series.get("stroke")
+            });
+            return rectangle;
+        }
+    }
+
+    /**
+     * RENDER PIE CHART
+     * - 파이 차트를 렌더링
+     * - 데이터와 옵션에 따라 파이 시리즈와 레전드를 생성
+     * 
+     * @param {Array} data - 차트에 표시될 데이터
+     * @param {Object} options - 차트 설정을 포함하는 사용자 정의 옵션 객체
+     */
+    renderPieChart(data, options) {
+        const root = this.createRoot(options);
+        const chart = this.createChart(root, options);
+        
+        // createPercentSeries 함수가 시리즈 객체를 반환하도록 수정
+        let pieSeries = this.createPercentSeries({
+            chart: chart,
+            root: root,
+            data: data,
+            options: options,
+            seriesOptions: {
+                seriesType: "pie",
+            }
+        });
+
+        let labelOptions = {
+            text: options.option?.customLabel?.text,
+            fontSize: options.option?.customLabel?.fontSize ? options.option.customLabel.fontSize : 20,
+            fontWeight: 500,
+            centerX: am5.percent(50),
+            centerY: options.option?.halfMode === true ? am5.percent(90) : am5.percent(50),
+            populateText: true,
+            textAlign : "center",
+            oversizedBehavior: "fit",
+            ...(options.option?.label?.fill && { fill: options.option.label.fill })
+        }
+
+        if (options.option?.customLabel) {
+            let label = pieSeries.children.push(am5.Label.new(root, labelOptions));
+
+            pieSeries.onPrivate("width", function(width) {
+                label.set("maxWidth", width * 0.5);
+            });
+        }
+
+        this.createLegend(chart, root, options, pieSeries);
+    }
+
+    /**
+     * RENDER DATE CHART
+     * - 날짜 기반 차트를 렌더링 
+     * - X축 또는 Y축에 날짜를 설정하고, 설정에 따라 적절하게 축을 구성
+     * 
+     * @param {Array} data - 차트에 표시될 데이터
+     * @param {Object} options - 차트 생성 및 구성 옵션을 포함하는 객체
+     */
+    renderDateChart(data, options) {
+        const root = this.createRoot(options);
+        const chart = this.createChart(root, options);
+    
+        let xAxis, yAxis, xRenderer, yRenderer;
+
+        chart.leftAxesContainer.set("layout", root.verticalLayout);
+
+        if (options.axis.x?.series) {
+            xRenderer = am5xy.AxisRendererX.new(root, {
+                minGridDistance: options.axis?.minGridDistance ? options.axis.minGridDistance : undefined,
+            });
+
+            xAxis = chart.xAxes.push(am5xy.ValueAxis.new(root, {
+                renderer: xRenderer,
+                min : 0
+            }));
+
+            yRenderer = am5xy.AxisRendererY.new(root, {
+                minGridDistance: 0,
+                cellStartLocation: options.option.stacked === true ? undefined : 0.1,
+                cellEndLocation: options.option.stacked === true ? undefined : 0.9,
+            });
+
+            let yAxisOptions = {
+                baseInterval: {
+                    timeUnit: options.chart.timeUnit,
+                    count: 1
+                },
+                renderer: yRenderer,
+                maxDeviation: options.axis?.maxDeviation ? options.axis.maxDeviation : 0,
+            }
+
+            yAxis = chart.yAxes.push(am5xy.DateAxis.new(root, yAxisOptions));
+
+            // 날짜 형식
+            yAxis.get("dateFormats")["day"] = "yyyy-MM-dd";
+            yAxis.get("dateFormats")["month"] = "yyyy-MM";
+            yAxis.get("dateFormats")["year"] = "yyyy";
+            yAxisOptions.markUnitChange = false;
+        } else {
+            yRenderer = am5xy.AxisRendererY.new(root, {
+                minGridDistance: options.axis?.minGridDistance ? options.axis.minGridDistance : undefined,
+            });
+
+            yAxis = chart.yAxes.push(am5xy.ValueAxis.new(root, {
+                renderer : yRenderer,
+                min : 0,
+            }));
+
+            xRenderer = am5xy.AxisRendererX.new(root, { 
+                minGridDistance: 0,
+                cellStartLocation: options.option?.stacked === true ? undefined : 0.1,
+                cellEndLocation: options.option?.stacked === true ? undefined : 0.9,
+            });
+
+            let xAxisOptions = {
+                baseInterval: {
+                    timeUnit: options.chart.timeUnit,
+                    count: 1
+                },
+                renderer: xRenderer,
+                maxDeviation: options.axis?.maxDeviation ? options.axis.maxDeviation : 0,
+            }
+
+            xAxis = chart.xAxes.push(am5xy.DateAxis.new(root, xAxisOptions));
+
+            // 날짜 형식
+            xAxis.get("dateFormats")["day"] = "yyyy-MM-dd";
+            xAxis.get("dateFormats")["month"] = "yyyy-MM";
+            xAxis.get("dateFormats")["year"] = "yyyy";
+            xAxisOptions.markUnitChange = false;
+        }
+
+        this.setAxisLabelRotation(xRenderer, options.axis.x?.axisLabel);
+        this.setAxisLabelRotation(yRenderer, options.axis.y?.axisLabel);
+
+        this.setAxisLabel(root, xAxis, options.axis.x?.customAxisLabel, false);
+        this.setAxisLabel(root, yAxis, options.axis.y?.customAxisLabel, true);
+
+        this.setAxisTitle(root, yAxis, {title: options.axis?.title});
+
+        // 시리즈 생성을 위한 공통 로직
+        const seriesOptions = options.axis.x?.series ? options.axis.x.series : options.axis.y?.series;
+        Object.entries(seriesOptions).forEach(([key, value]) => {
+            // X 축 또는 Y 축 중 날짜 데이터를 사용하는 축을 결정하는 로직
+            let dateAxis = options.axis.y?.series ? xAxis : yAxis;
+            
+            this.createXYSeries({
+                chart: chart,
+                root: root,
+                data: data,
+                options: options,
+                seriesType: value,
+                seriesOptions: {
+                    xAxis: xAxis,
+                    yAxis: yAxis,
+                    valueName: key,
+                    // 날짜 데이터를 사용하는 축에 맞는 tooltipFormat을 설정
+                    tooltipFormat: this.tooltipFormat(dateAxis, options)
+                }
+            });
+        });
+
+        this.createLegend(chart, root, options);
+
+        chart.appear(1000, 100);
+    }
+
+    /**
+     * SET AXIS LABEL ROTATION
+     * - 축 라벨의 회전을 설정합니다.
+     *
+     * @param {Object} renderer - 축의 렌더러 객체
+     * @param {Object} axisLabelOptions - 축 라벨 옵션 객체
+     */
+    setAxisLabelRotation(renderer, axisLabelOptions) {
+        if (axisLabelOptions?.rotation) {
+            renderer.labels.template.setAll({
+                rotation: axisLabelOptions.rotation,
+                x: am5.p50,
+                y: am5.p50,
+                centerX: am5.p50,
+                centerY: am5.p50,
+            });
+        }
+    }
+
+    /**
+     * RENDER CATEGORY CHART
+     * - 카테고리 기반 차트를 렌더링
+     * - X축 또는 Y축에 카테고리를 설정하고, 해당 카테고리에 따라 데이터를 시각화
+     *
+     * @param {Array} data - 차트에 표시될 데이터
+     * @param {Object} options - 차트 및 축 설정을 포함하는 사용자 정의 옵션
+     */
+    renderCategoryChart(data, options) {
+        const root = this.createRoot(options);
+        const chart = this.createChart(root, options);
+
+        chart.leftAxesContainer.set("layout", root.verticalLayout);
+
+        let xAxis, yAxis, xRenderer, yRenderer;
+    
+        if (options.axis.x?.series) {
+            yRenderer = am5xy.AxisRendererY.new(root, {
+                minGridDistance: 0,
+                cellStartLocation: options.option.stacked === true ? undefined : 0.1,
+                cellEndLocation: options.option.stacked === true ? undefined : 0.9,
+            });
+
+            yAxis = chart.yAxes.push(am5xy.CategoryAxis.new(root, {
+                categoryField: "category",
+                renderer: yRenderer,
+                maxDeviation: options.axis?.maxDeviation ? options.axis.maxDeviation : 0,
+            }));
+
+            yAxis.data.setAll(data);
+    
+            xRenderer = am5xy.AxisRendererX.new(root, {
+                minGridDistance: options.axis?.minGridDistance ? options.axis.minGridDistance : undefined,
+                strokeOpacity: 0.1
+            });
+
+            xAxis = chart.xAxes.push(am5xy.ValueAxis.new(root, {
+                min: 0,
+                maxPrecision: 0,
+                renderer: xRenderer
+            }));
+        } else {
+            xRenderer = am5xy.AxisRendererX.new(root, { 
+                minGridDistance: 0,
+                cellStartLocation: options.option.stacked === true ? undefined : 0.1,
+                cellEndLocation: options.option.stacked === true ? undefined : 0.9,
+            });
+
+            xAxis = chart.xAxes.push(am5xy.CategoryAxis.new(root, {
+                categoryField: "category",
+                renderer: xRenderer,
+                maxDeviation: options.axis?.maxDeviation ? options.axis.maxDeviation : 0,
+            }));
+
+            xAxis.data.setAll(data);
+
+            yRenderer = am5xy.AxisRendererY.new(root, { 
+                strokeOpacity: 0.1,
+                minGridDistance: options.axis?.minGridDistance ? options.axis.minGridDistance : undefined,
+            });
+
+            yAxis = chart.yAxes.push(am5xy.ValueAxis.new(root, {
+                min : 0,
+                renderer: yRenderer
+            }));
+        }
+
+        this.setAxisLabelRotation(xRenderer, options.axis.x?.axisLabel);
+        this.setAxisLabelRotation(yRenderer, options.axis.y?.axisLabel);
+
+        this.setAxisLabel(root, xAxis, options.axis.x?.customAxisLabel, false);
+        this.setAxisLabel(root, yAxis, options.axis.y?.customAxisLabel, true);
+
+        this.setAxisTitle(root, yAxis, {title: options.axis?.title})
+
+        // 시리즈 생성을 위한 공통 로직
+        const seriesOptions = options.axis.x?.series ? options.axis.x.series : options.axis.y?.series;
+        Object.entries(seriesOptions).forEach(([key, value]) => {
+            this.createXYSeries({
+                chart: chart,
+                root: root,
+                data: data,
+                options: options,
+                seriesType: value,
+                seriesOptions: {
+                    xAxis: xAxis,
+                    yAxis: yAxis,
+                    valueName: key,
+                }
+            });
+        });
+    
+        this.createLegend(chart, root, options);
+    
+        chart.appear(1000, 100);
+    }
+
+    tooltipFormat(axis, options) {
+        let tooltipFormat = '';
+
+        if (options.chart.timeUnit === 'day') {
+            tooltipFormat = "yyyy-MM-dd";
+        } else if (options.chart.timeUnit === 'month') {
+            tooltipFormat = "yyyy-MM";
+        } else {
+            tooltipFormat = "yyyy";
+        }
+
+        switch (options.option?.language) {
+            case "ko":
+                    if (options.chart.timeUnit === 'day') {
+                        axis.get("dateFormats")["day"] = "d'일'";
+                        axis.get("periodChangeDateFormats")["day"] = "d'일'";
+                        tooltipFormat = "M월 d일";
+                    } else if (options.chart.timeUnit === 'month') {
+                        axis.get("dateFormats")["month"] = "M'월'";
+                        axis.get("periodChangeDateFormats")["month"] = "M'월'";
+                        tooltipFormat = "M월";
+                    }
+                break;
+                case "en":
+                    if (options.chart.timeUnit === 'day') {
+                        axis.get("dateFormats")["day"] = "dt";
+                        axis.get("periodChangeDateFormats")["day"] = "dt";
+                        tooltipFormat = "MMM dt";
+                    } else if (options.chart.timeUnit === 'month') {
+                        axis.get("dateFormats")["month"] = "MMM";
+                        axis.get("periodChangeDateFormats")["month"] = "MMM";
+                        tooltipFormat = "MMM";
+                    }
+                break;
+                case "vi":
+                    if (options.chart.timeUnit === 'day') {
+                        axis.get("dateFormats")["day"] = "d'ngày'";
+                        axis.get("periodChangeDateFormats")["day"] = "d'ngày'";
+                        tooltipFormat = "M'tháng' d'ngày'";
+                    } else if (options.chart.timeUnit === 'month') {
+                        axis.get("dateFormats")["month"] = "M'tháng'";
+                        axis.get("periodChangeDateFormats")["month"] = "M'tháng'";
+                        tooltipFormat = "M'tháng'";
+                    }
+                break;
+        }
+
+        return tooltipFormat;
+    }
+
+}

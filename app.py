@@ -94,6 +94,16 @@ def accept_alert_if_present(driver, timeout=2):
         return text
     except Exception: return None
 
+def robust_click(driver, elem, name="element"):
+    for fn in (lambda: elem.click(), lambda: driver.execute_script("arguments[0].click();", elem)):
+        try:
+            driver.execute_script("arguments[0].scrollIntoView({block:'center'});", elem)
+            time.sleep(0.2)
+            fn()
+            return
+        except Exception: time.sleep(0.2)
+    raise Exception(f"Failed to click {name}")
+
 def check_and_switch_iframe(driver):
     try:
         driver.switch_to.default_content()
@@ -221,25 +231,68 @@ def execute_mode_logic(driver, item, run_mode):
         search_input.send_keys(item["col2"])
         driver.find_element(By.XPATH, "//button[@onclick='searchMember()']").click(); time.sleep(1)
         cb = driver.find_element(By.CSS_SELECTOR, "#memberList input.memberChk")
-        driver.execute_script("arguments[0].checked = true; arguments[0].dispatchEvent(new Event('change', {bubbles:true}));", cb)
+        driver.execute_script("arguments[0].checked = true; driver.dispatchEvent(new Event('change', {bubbles:true}));", cb)
         driver.find_element(By.XPATH, "//button[@onclick='addMemberSearchMember()']").click(); time.sleep(0.5)
         accept_alert_if_present(driver, timeout=3)
         driver.find_element(By.XPATH, "//button[@onclick='updateAssignCnt()']").click(); time.sleep(0.5)
         accept_alert_if_present(driver, timeout=5)
 
     elif run_mode == MODE_CHANGE_POINT:
-        open_search_form_if_needed(driver); input_task_name(driver, item["task_name"])
-        driver.find_element(By.CSS_SELECTOR, "#btn_search").click(); wait_loading(driver); check_and_switch_iframe(driver)
+        open_search_form_if_needed(driver)
+        input_task_name(driver, item["task_name"])
+        driver.find_element(By.CSS_SELECTOR, "#btn_search").click()
+        wait_loading(driver)
+        check_and_switch_iframe(driver)
+        
         rows = driver.find_elements(By.CSS_SELECTOR, "#task_list > tr")
         row = next((r for r in rows if item["task_name"] in r.text), None)
-        if not row: raise Exception("Không tìm thấy hàng dữ liệu")
+        if not row: 
+            raise Exception("Không tìm thấy hàng dữ liệu của Task trong bảng")
+            
         tds = row.find_elements(By.TAG_NAME, "td")
-        driver.execute_script("arguments[0].click();", tds[1]); wait_loading(driver)
-        driver.find_element(By.CSS_SELECTOR, "button.btn-s-point").click(); time.sleep(0.5)
+        driver.execute_script("arguments[0].click();", tds[1])
+        wait_loading(driver)
+        time.sleep(2)  # Chờ trang chi tiết tải xong các nút điểm
+        
+        check_and_switch_iframe(driver)
+        alter_btn = None
+        point_btn_selectors = [
+            "//button[contains(@class, 'btn-s-point')]",
+            "//button[contains(@onclick, 'Point') or contains(@onclick, 'point')]",
+            "//a[contains(@class, 'btn-s-point')]",
+            "//button[contains(normalize-space(), 'Point') or contains(normalize-space(), '점수')]"
+        ]
+        
+        try:
+            WebDriverWait(driver, 15).until(EC.presence_of_element_located((By.XPATH, point_btn_selectors[0])))
+        except Exception: pass
+
+        for xp in point_btn_selectors:
+            btns = driver.find_elements(By.XPATH, xp)
+            if btns and btns[0].is_displayed():
+                alter_btn = btns[0]
+                break
+                
+        if not alter_btn:
+            css_btns = driver.find_elements(By.CSS_SELECTOR, "button.btn-s-point")
+            if css_btns: alter_btn = css_btns[0]
+
+        if not alter_btn:
+            raise Exception("Không tìm thấy nút sửa điểm số (Point Button).")
+            
+        robust_click(driver, alter_btn, "open point popup")
+        time.sleep(0.5)
+        
         for key, val in [("#updateWorkPoint", item["anno_point"]), ("#updateReviewPoint", item["rv_point"])]:
             inp = WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.CSS_SELECTOR, key)))
-            inp.click(); inp.send_keys(Keys.CONTROL, "a"); inp.send_keys(Keys.DELETE); inp.clear(); inp.send_keys(str(val))
-        driver.find_element(By.CSS_SELECTOR, "button.btn-l-point").click(); wait_loading(driver)
+            inp.click()
+            driver.execute_script("arguments[0].value = '';", inp)
+            inp.send_keys(Keys.CONTROL, "a")
+            inp.send_keys(Keys.DELETE)
+            inp.send_keys(str(val))
+            
+        driver.find_element(By.CSS_SELECTOR, "button.btn-l-point").click()
+        wait_loading(driver)
 
     elif run_mode == MODE_3D_ANNO_REVIEW:
         progress_tab = WebDriverWait(driver, 15).until(EC.presence_of_element_located((By.XPATH, "//li[@onclick='ingtask()']")))
@@ -255,7 +308,7 @@ def execute_mode_logic(driver, item, run_mode):
             search_input.send_keys(item["worker_id"])
             driver.find_element(By.XPATH, "//button[@onclick='searchMember()']").click(); time.sleep(1)
             cb = driver.find_element(By.CSS_SELECTOR, "#memberList input.memberChk")
-            driver.execute_script("arguments[0].checked = true; arguments[0].dispatchEvent(new Event('change', {bubbles:true}));", cb)
+            driver.execute_script("arguments[0].checked = true; driver.dispatchEvent(new Event('change', {bubbles:true}));", cb)
             driver.find_element(By.XPATH, "//button[@onclick='addMemberSearchMember()']").click(); time.sleep(0.5)
         if item["anno_limit"]:
             inp = WebDriverWait(driver, 15).until(EC.presence_of_element_located((By.CSS_SELECTOR, "input#workAssignCnt")))
@@ -266,7 +319,7 @@ def execute_mode_logic(driver, item, run_mode):
             search_input.send_keys(item["reviewer_id"])
             driver.find_element(By.XPATH, "//button[@onclick='searchMember()']").click(); time.sleep(1)
             cb = driver.find_element(By.CSS_SELECTOR, "#memberList input.memberChk")
-            driver.execute_script("arguments[0].checked = true; arguments[0].dispatchEvent(new Event('change', {bubbles:true}));", cb)
+            driver.execute_script("arguments[0].checked = true; driver.dispatchEvent(new Event('change', {bubbles:true}));", cb)
             driver.find_element(By.XPATH, "//button[@onclick='addMemberSearchMember()']").click(); time.sleep(0.5)
             accept_alert_if_present(driver, timeout=3)
         driver.find_element(By.XPATH, "//button[@onclick='updateAssignCnt()']").click(); time.sleep(0.5)
@@ -298,7 +351,7 @@ def execute_mode_logic(driver, item, run_mode):
         search_input.send_keys(item["col2"])
         driver.find_element(By.XPATH, "//button[contains(., 'Search')]").click(); time.sleep(1)
         cb = driver.find_element(By.CSS_SELECTOR, "input.memberChk")
-        driver.execute_script("arguments[0].checked = true; arguments[0].dispatchEvent(new Event('change', {bubbles:true}));", cb)
+        driver.execute_script("arguments[0].checked = true; driver.dispatchEvent(new Event('change', {bubbles:true}));", cb)
         driver.find_element(By.XPATH, "//button[@onclick='addMemberSearchMember()']").click(); time.sleep(0.5)
         accept_alert_if_present(driver, timeout=3)
         driver.find_element(By.XPATH, "//button[@onclick='updateAssignCnt()']").click(); time.sleep(0.5)

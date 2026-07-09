@@ -139,7 +139,7 @@ def find_matching_row(driver, task_name):
         except Exception: continue
     return None
 
-# 🛠️ ĐỒNG BỘ THUẬT TOÁN ĐIỀU HƯỚNG TRANG CHI TIẾT CHUẨN TỪ SCRIPT GỐC
+# ĐỒNG BỘ THUẬT TOÁN ĐIỀU HƯỚNG TRANG CHI TIẾT CHUẨN TỪ SCRIPT GỐC
 def click_task_name_from_row(driver, row, task_name):
     tds = row.find_elements(By.TAG_NAME, "td")
     task_name_cell = tds[1]
@@ -281,12 +281,14 @@ def execute_mode_logic(driver, item, run_mode):
         if not row: 
             raise Exception("Không tìm thấy hàng dữ liệu của Task trong bảng")
             
-        # 🛠️ ÁP DỤNG HÀM CLICK CHUẨN: Điều hướng bằng thẻ liên kết <a> giống y hệt script gốc
+        # Điều hướng mở trang chi tiết chuẩn xác bằng thẻ <a>
         click_task_name_from_row(driver, row, item["task_name"])
         wait_loading(driver)
-        time.sleep(3) # Chờ trang chi tiết render toàn bộ data
+        time.sleep(3) 
         
-        check_and_switch_iframe(driver)
+        # 🛠️ SỬA LỖI CORE DÒNG 314: Ép Selenium ở lại trang chính (default_content) giống script gốc, tuyệt đối không switch_iframe
+        driver.switch_to.default_content()
+        
         alter_btn = None
         point_btn_selectors = [
             "//button[contains(@class, 'btn-s-point')]",

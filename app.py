@@ -11,6 +11,7 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import WebDriverWait
+from selenium.common.exceptions import TimeoutException
 
 # Định nghĩa các chế độ chạy (Modes)
 MODE_ASSIGN_MASTER   = "1. Auto Assign Master View"
@@ -365,12 +366,14 @@ if st.button("🚀 KÍCH HOẠT CHẠY AUTO", type="primary"):
     if not uploaded_file or not cookie_raw:
         st.error("Vui lòng tải lên file dữ liệu (.txt) và dán chuỗi Cookies JSON trước khi chạy!")
     else:
+        # 🚀 CẤU HÌNH CHROME NGẦM CHUẨN - TỐI ƯU CHO RAILWAY
         options = webdriver.ChromeOptions()
         options.add_argument("--headless=new")
         options.add_argument("--no-sandbox")
-        options.add_argument("--disable-gpu")
         options.add_argument("--disable-dev-shm-usage")
-        options.add_argument("--window-size=1920,1080")
+        options.add_argument("--disable-gpu")
+        # Giả lập để không bị hệ thống quét chặn bot gây Timeout
+        options.add_argument("--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
         
         driver = webdriver.Chrome(options=options)
         
@@ -386,7 +389,7 @@ if st.button("🚀 KÍCH HOẠT CHẠY AUTO", type="primary"):
                 
             driver.get(project_url)
             wait_loading(driver)
-            time.sleep(3) # Tăng thời gian chờ ban đầu sau gán cookie
+            time.sleep(3)
             
             if "/login" in driver.current_url.lower():
                 raise Exception("Cookies JSON dán vào đã HẾT HẠN hoặc THIẾU khóa bảo mật. Vui lòng mở Chrome máy cá nhân, bấm F5 Refresh trang AI Studio rồi tiến hành Export lại Cookies mới!")
@@ -408,6 +411,16 @@ if st.button("🚀 KÍCH HOẠT CHẠY AUTO", type="primary"):
                     err_type = type(e).__name__
                     error_clean = getattr(e, 'msg', str(e)).replace('\n', ' ').strip()
                     msg = f"🔴 Dòng {item['line_no']} | Thất bại dòng {line_err} ({err_type}): {error_clean[:100]} | Task: {item['task_name']}"
+                    
+                    # 📸 BẪY ẢNH TỰ ĐỘNG: Chụp trực quan màn hình Chrome ngầm ngay lập tức khi dính Timeout
+                    if err_type == "TimeoutException" or "timeout" in error_clean.lower():
+                        screenshot_path = f"error_line_{item['line_no']}.png"
+                        try:
+                            driver.save_screenshot(screenshot_path)
+                            st.warning(f"⚠️ Phát hiện nghẽn dữ liệu tại Dòng {item['line_no']} (Task: {item['task_name']})")
+                            st.image(screenshot_path, caption=f"Ảnh chụp thực tế Chrome ngầm tại dòng lỗi {line_err}")
+                        except Exception as screenshot_error:
+                            st.sidebar.error(f"Không thể ghi ảnh: {screenshot_error}")
                     
                 logs.append(msg)
                 log_container.code("\n".join(logs))

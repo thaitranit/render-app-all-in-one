@@ -129,6 +129,33 @@ def input_task_name(driver, task_name):
     search_input.send_keys(Keys.CONTROL, "a"); search_input.send_keys(Keys.DELETE); search_input.clear()
     search_input.send_keys(task_name); time.sleep(0.2)
 
+def find_matching_row(driver, task_name):
+    check_and_switch_iframe(driver)
+    rows = driver.find_elements(By.CSS_SELECTOR, "#task_list > tr")
+    for row in rows:
+        try:
+            txt = " | ".join(td.text.strip() for td in row.find_elements(By.TAG_NAME, "td"))
+            if task_name in txt: return row
+        except Exception: continue
+    return None
+
+# 🛠️ ĐỒNG BỘ THUẬT TOÁN ĐIỀU HƯỚNG TRANG CHI TIẾT CHUẨN TỪ SCRIPT GỐC
+def click_task_name_from_row(driver, row, task_name):
+    tds = row.find_elements(By.TAG_NAME, "td")
+    task_name_cell = tds[1]
+    anchors = task_name_cell.find_elements(By.TAG_NAME, "a")
+    if anchors:
+        robust_click(driver, anchors[0], "task name anchor")
+        return
+    descendants = task_name_cell.find_elements(By.XPATH, ".//*")
+    for elem in descendants:
+        try:
+            if task_name in (elem.text or ""):
+                robust_click(driver, elem, "task name descendant")
+                return
+        except Exception: continue
+    robust_click(driver, task_name_cell, "task name cell")
+
 def parse_uploaded_file(file_content):
     tasks = []
     lines = file_content.decode("utf-8-sig").splitlines()
@@ -190,7 +217,12 @@ def execute_mode_logic(driver, item, run_mode):
         
         driver.get(project_url); wait_loading(driver); open_search_form_if_needed(driver); input_task_name(driver, item["task_name"])
         driver.find_element(By.CSS_SELECTOR, "#btn_search").click(); wait_loading(driver); check_and_switch_iframe(driver)
-        driver.find_element(By.CSS_SELECTOR, "#task_list > tr:nth-child(1) span.ellipsis.underline").click(); wait_loading(driver); check_and_switch_iframe(driver)
+        
+        row = find_matching_row(driver, item["task_name"])
+        if not row: raise Exception("Không tìm thấy hàng dữ liệu sau khi Import")
+        click_task_name_from_row(driver, row, item["task_name"])
+        wait_loading(driver); check_and_switch_iframe(driver)
+        
         reopen_btns = driver.find_elements(By.CSS_SELECTOR, "#taskReOpen")
         if reopen_btns:
             driver.execute_script("arguments[0].click();", reopen_btns[0])
@@ -219,11 +251,12 @@ def execute_mode_logic(driver, item, run_mode):
         driver.execute_script("arguments[0].click();", completed_tab); wait_loading(driver)
         open_search_form_if_needed(driver); input_task_name(driver, item["task_name"])
         driver.find_element(By.CSS_SELECTOR, "#btn_search").click(); wait_loading(driver); check_and_switch_iframe(driver)
-        rows = driver.find_elements(By.CSS_SELECTOR, "#task_list > tr")
-        row = next((r for r in rows if item["task_name"] in r.text), None)
+        row = find_matching_row(driver, item["task_name"])
         if not row: raise Exception("Không tìm thấy task")
-        tds = row.find_elements(By.TAG_NAME, "td")
-        driver.execute_script("arguments[0].click();", tds[1]); wait_loading(driver); check_and_switch_iframe(driver)
+        
+        click_task_name_from_row(driver, row, item["task_name"])
+        wait_loading(driver); check_and_switch_iframe(driver)
+        
         WebDriverWait(driver, 10).until(EC.element_to_be_clickable((By.XPATH, "//a[normalize-space()='Member']"))).click()
         driver.find_element(By.CSS_SELECTOR, "button.btn-member.add[onclick='searchMemberList(3)']").click()
         
@@ -244,15 +277,14 @@ def execute_mode_logic(driver, item, run_mode):
         wait_loading(driver)
         check_and_switch_iframe(driver)
         
-        rows = driver.find_elements(By.CSS_SELECTOR, "#task_list > tr")
-        row = next((r for r in rows if item["task_name"] in r.text), None)
+        row = find_matching_row(driver, item["task_name"])
         if not row: 
             raise Exception("Không tìm thấy hàng dữ liệu của Task trong bảng")
             
-        tds = row.find_elements(By.TAG_NAME, "td")
-        driver.execute_script("arguments[0].click();", tds[1])
+        # 🛠️ ÁP DỤNG HÀM CLICK CHUẨN: Điều hướng bằng thẻ liên kết <a> giống y hệt script gốc
+        click_task_name_from_row(driver, row, item["task_name"])
         wait_loading(driver)
-        time.sleep(2)  # Chờ trang chi tiết tải xong các nút điểm
+        time.sleep(3) # Chờ trang chi tiết render toàn bộ data
         
         check_and_switch_iframe(driver)
         alter_btn = None
@@ -260,11 +292,12 @@ def execute_mode_logic(driver, item, run_mode):
             "//button[contains(@class, 'btn-s-point')]",
             "//button[contains(@onclick, 'Point') or contains(@onclick, 'point')]",
             "//a[contains(@class, 'btn-s-point')]",
-            "//button[contains(normalize-space(), 'Point') or contains(normalize-space(), '점수')]"
+            "//button[contains(normalize-space(), 'Point') or contains(normalize-space(), '점수') or contains(@class, 'point')]",
+            "//*[contains(@onclick, 'fnUpdatePoint') or contains(@onclick, 'popPoint')]"
         ]
         
         try:
-            WebDriverWait(driver, 15).until(EC.presence_of_element_located((By.XPATH, point_btn_selectors[0])))
+            WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.XPATH, point_btn_selectors[0])))
         except Exception: pass
 
         for xp in point_btn_selectors:
@@ -299,8 +332,12 @@ def execute_mode_logic(driver, item, run_mode):
         driver.execute_script("arguments[0].click();", progress_tab); wait_loading(driver)
         open_search_form_if_needed(driver); input_task_name(driver, item["task_name"])
         driver.find_element(By.CSS_SELECTOR, "#btn_search").click(); wait_loading(driver); check_and_switch_iframe(driver)
-        task_span = WebDriverWait(driver, 10).until(EC.element_to_be_clickable((By.CSS_SELECTOR, "#task_list > tr:nth-child(1) span.ellipsis.underline")))
-        driver.execute_script("arguments[0].click();", task_span); wait_loading(driver)
+        row = find_matching_row(driver, item["task_name"])
+        if not row: raise Exception("Không tìm thấy hàng dữ liệu")
+        
+        click_task_name_from_row(driver, row, item["task_name"])
+        wait_loading(driver)
+        
         WebDriverWait(driver, 10).until(EC.element_to_be_clickable((By.XPATH, "//a[normalize-space()='Member']"))).click()
         if item["worker_id"] and item["worker_id"].strip() not in ("-", "none", "None"):
             driver.find_element(By.CSS_SELECTOR, "button#button_WorkMember.btn-member.add[onclick*='searchMemberList(0)']").click()
@@ -328,18 +365,18 @@ def execute_mode_logic(driver, item, run_mode):
     elif run_mode == MODE_INSPECTION_AI:
         open_search_form_if_needed(driver); input_task_name(driver, item["task_name"])
         driver.find_element(By.CSS_SELECTOR, "#btn_search").click(); wait_loading(driver); check_and_switch_iframe(driver)
-        rows = driver.find_elements(By.CSS_SELECTOR, "#task_list > tr")
-        row = next((r for r in rows if item["task_name"] in r.text), None)
+        row = find_matching_row(driver, item["task_name"])
         if row is None:
             completed_tab = WebDriverWait(driver, 15).until(EC.presence_of_element_located((By.XPATH, "//li[contains(., 'Completed Tasks')]")))
             driver.execute_script("arguments[0].click();", completed_tab); wait_loading(driver)
             open_search_form_if_needed(driver); input_task_name(driver, item["task_name"])
             driver.find_element(By.CSS_SELECTOR, "#btn_search").click(); wait_loading(driver); check_and_switch_iframe(driver)
-            rows = driver.find_elements(By.CSS_SELECTOR, "#task_list > tr")
-            row = next((r for r in rows if item["task_name"] in r.text), None)
+            row = find_matching_row(driver, item["task_name"])
         if row is None: raise Exception("Không tìm thấy task")
-        tds = row.find_elements(By.TAG_NAME, "td")
-        driver.execute_script("arguments[0].click();", tds[1]); wait_loading(driver); check_and_switch_iframe(driver)
+        
+        click_task_name_from_row(driver, row, item["task_name"])
+        wait_loading(driver); check_and_switch_iframe(driver)
+        
         WebDriverWait(driver, 10).until(EC.element_to_be_clickable((By.XPATH, "//a[normalize-space()='Member']"))).click()
         role_title = WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.XPATH, "//*[normalize-space()='Inspector']")))
         current = role_title
@@ -362,7 +399,6 @@ if st.button("🚀 KÍCH HOẠT CHẠY AUTO", type="primary"):
     if not uploaded_file or not cookie_raw:
         st.error("Vui lòng tải lên file dữ liệu (.txt) và dán chuỗi Cookies JSON trước khi chạy!")
     else:
-        # Cấu hình Chrome Headless tiết kiệm RAM tối đa cho Render
         options = webdriver.ChromeOptions()
         options.add_argument("--headless=new")
         options.add_argument("--no-sandbox")
@@ -373,18 +409,15 @@ if st.button("🚀 KÍCH HOẠT CHẠY AUTO", type="primary"):
         driver = webdriver.Chrome(options=options)
         
         try:
-            # 1. Gọi domain gốc để Selenium gán định danh vùng Cookie
             driver.get("https://www.ai-studio.co.kr/")
             time.sleep(1)
             driver.delete_all_cookies()
             
-            # 2. Giải mã và nạp danh sách Cookie động
             cookies_list = json.loads(cookie_raw)
             for cookie in cookies_list:
                 if 'sameSite' in cookie: del cookie['sameSite']
                 driver.add_cookie(cookie)
                 
-            # 3. Phân tách file và chạy tự động gán task ngầm
             tasks = parse_uploaded_file(uploaded_file.read())
             
             progress_bar = st.progress(0)

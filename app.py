@@ -165,10 +165,9 @@ def execute_mode_logic(driver, item, run_mode):
     if run_mode in (MODE_IMPORT_2D, MODE_IMPORT_3D, MODE_STATUS_SET):
         open_search_form_if_needed(driver); input_task_name(driver, item["task_name"])
         driver.find_element(By.CSS_SELECTOR, "#btn_search").click(); wait_loading(driver)
-        time.sleep(4) # 🛠️ TĂNG THỜI GIAN CHỜ: Để server Render chậm có đủ thời gian tải bảng Ajax
+        time.sleep(4) 
         check_and_switch_iframe(driver)
         
-        # 🛠️ CHỐNG SẬP DÒNG 105: Tăng giới hạn kiên nhẫn của lệnh WebDriverWait lên hẳn 45 giây cho Render
         WebDriverWait(driver, 45).until(EC.presence_of_element_located((By.CSS_SELECTOR, "#task_list > tr:nth-child(1)")))
         if "no data" in driver.find_element(By.CSS_SELECTOR, "#task_list > tr:nth-child(1)").text.lower():
             raise Exception(f"Không tìm thấy Task: {item['task_name']}")
@@ -230,27 +229,32 @@ def execute_mode_logic(driver, item, run_mode):
             wait_loading(driver)
             
     elif run_mode == MODE_ASSIGN_MASTER:
-        completed_tab = None
-        completed_xpaths = ["//*[normalize-space()='Completed Tasks']", "//*[contains(normalize-space(), 'Completed')]", "//*[normalize-space()='완료']"]
-        for xp in completed_xpaths:
-            tabs = driver.find_elements(By.XPATH, xp)
-            if tabs and tabs[0].is_displayed(): completed_tab = tabs[0]; break
-        if completed_tab:
-            robust_click(driver, completed_tab, "Completed Tab")
-            wait_loading(driver)
-            
-        open_search_form_if_needed(driver); input_task_name(driver, item["task_name"])
-        driver.find_element(By.CSS_SELECTOR, "#btn_search").click(); wait_loading(driver); time.sleep(3); check_and_switch_iframe(driver)
-        row = find_matching_row(driver, item["task_name"])
-        if not row and completed_tab:
-            driver.get(project_url); wait_loading(driver); open_search_form_if_needed(driver); input_task_name(driver, item["task_name"])
+        # 🛠️ KIỂM TRA ĐIỀU KIỆN ĐẶC BIỆT: Nếu hệ thống đã tự nhảy vào trang "Task Details" luôn (như trên Railway)
+        if "taskDetails" in driver.current_url or len(driver.find_elements(By.XPATH, "//*[normalize-space()='Task Details']")) > 0:
+            pass # Đã đứng sẵn trong trang chi tiết, không cần thực hiện quét tìm bảng tổng nữa
+        else:
+            completed_tab = None
+            completed_xpaths = ["//*[normalize-space()='Completed Tasks']", "//*[contains(normalize-space(), 'Completed')]", "//*[normalize-space()='완료']"]
+            for xp in completed_xpaths:
+                tabs = driver.find_elements(By.XPATH, xp)
+                if tabs and tabs[0].is_displayed(): completed_tab = tabs[0]; break
+            if completed_tab:
+                robust_click(driver, completed_tab, "Completed Tab")
+                wait_loading(driver)
+                
+            open_search_form_if_needed(driver); input_task_name(driver, item["task_name"])
             driver.find_element(By.CSS_SELECTOR, "#btn_search").click(); wait_loading(driver); time.sleep(3); check_and_switch_iframe(driver)
             row = find_matching_row(driver, item["task_name"])
-        if not row: raise Exception("Không tìm thấy task")
+            if not row and completed_tab:
+                driver.get(project_url); wait_loading(driver); open_search_form_if_needed(driver); input_task_name(driver, item["task_name"])
+                driver.find_element(By.CSS_SELECTOR, "#btn_search").click(); wait_loading(driver); time.sleep(3); check_and_switch_iframe(driver)
+                row = find_matching_row(driver, item["task_name"])
+            if not row: raise Exception("Không tìm thấy task")
+            
+            click_task_name_from_row(driver, row, item["task_name"])
+            wait_loading(driver); check_and_switch_iframe(driver)
         
-        click_task_name_from_row(driver, row, item["task_name"])
-        wait_loading(driver); check_and_switch_iframe(driver)
-        
+        # 🚀 TIẾP TỤC ĐOẠN ĐIỀU HƯỚNG MEMBER CHUẨN XÁC
         WebDriverWait(driver, 20).until(EC.element_to_be_clickable((By.XPATH, "//a[normalize-space()='Member'] | //button[normalize-space()='Member']"))).click()
         driver.find_element(By.CSS_SELECTOR, "button.btn-member.add[onclick='searchMemberList(3)']").click()
         
@@ -372,7 +376,7 @@ if st.button("🚀 KÍCH HOẠT CHẠY AUTO", type="primary"):
         options.add_argument("--no-sandbox")
         options.add_argument("--disable-dev-shm-usage")
         options.add_argument("--disable-gpu")
-        # Giả lập để không bị hệ thống quét chặn bot gây Timeout
+        # Giả lập để hệ thống AI Studio không quét nhận diện bot tự động
         options.add_argument("--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
         
         driver = webdriver.Chrome(options=options)
@@ -412,13 +416,13 @@ if st.button("🚀 KÍCH HOẠT CHẠY AUTO", type="primary"):
                     error_clean = getattr(e, 'msg', str(e)).replace('\n', ' ').strip()
                     msg = f"🔴 Dòng {item['line_no']} | Thất bại dòng {line_err} ({err_type}): {error_clean[:100]} | Task: {item['task_name']}"
                     
-                    # 📸 BẪY ẢNH TỰ ĐỘNG: Chụp trực quan màn hình Chrome ngầm ngay lập tức khi dính Timeout
+                    # 📸 BẪY ẢNH TỰ ĐỘNG: Ghi lại hình ảnh nếu dính lỗi Timeout hoặc đứng màn hình
                     if err_type == "TimeoutException" or "timeout" in error_clean.lower():
                         screenshot_path = f"error_line_{item['line_no']}.png"
                         try:
                             driver.save_screenshot(screenshot_path)
-                            st.warning(f"⚠️ Phát hiện nghẽn dữ liệu tại Dòng {item['line_no']} (Task: {item['task_name']})")
-                            st.image(screenshot_path, caption=f"Ảnh chụp thực tế Chrome ngầm tại dòng lỗi {line_err}")
+                            st.warning(f"⚠️ Phát hiện lỗi xử lý giao diện tại Dòng {item['line_no']} (Task: {item['task_name']})")
+                            st.image(screenshot_path, caption=f"Ảnh chụp thực tế màn hình tại dòng lỗi {line_err}")
                         except Exception as screenshot_error:
                             st.sidebar.error(f"Không thể ghi ảnh: {screenshot_error}")
                     
